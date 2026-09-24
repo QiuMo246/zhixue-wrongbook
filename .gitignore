@@ -1,0 +1,15 @@
+# WorkBuddy 的运行态目录，不是项目内容。
+# 之前有一次切分支自动检查点把这类文件连着项目文件一起提交进了别的分支，
+# 显式忽略以免复发。
+.workbuddy-ai/
+.DS_Store
+Thumbs.db
+
+# 本地库与派生产物：学生数据不出本机
+*.db
+*.db-wal
+*.db-shm
+exports/
+# P0 探针产物含 Cookie / HAR / 作答照片，绝不入库
+probe/
+*.har
