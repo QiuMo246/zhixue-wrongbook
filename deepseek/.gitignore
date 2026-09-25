@@ -1,0 +1,23 @@
+# ===== 本地数据与隐私（绝不入库）=====
+# 真实错题库、抓取的图片、导出的报告 —— 全是真实学生数据
+zhixue-wrongbook/data/wrongbook.db*
+zhixue-wrongbook/data/wrongbook.bak*.db
+zhixue-wrongbook/data/images/
+zhixue-wrongbook/data/.session*
+zhixue-wrongbook/data/.password*
+zhixue-wrongbook/data/zx_*/
+zhixue-wrongbook/out/
+zhixue-wrongbook/data/homework_report.json
+
+# ===== 运行产物 =====
+__pycache__/
+*.pyc
+.venv/
+.playwright-mcp/
+report_top.png
+*.log
+
+# ===== 编辑器/工具 =====
+.workbuddy-ai/
+.zcode/
+.zcodeignore
