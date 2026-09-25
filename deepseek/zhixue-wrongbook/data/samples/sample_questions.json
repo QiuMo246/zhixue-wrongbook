@@ -1,0 +1,257 @@
+{
+  "_readme": "样例错题集。用于在【没有真实 Cookie】的情况下跑通全链路（架构文档第 13 节第 2 条：P2/P3 不依赖取数）。题目内容为教学场景常见题型的合成样例，不是从任何平台抓取的真题。故意包含几道异常样本（纯图片题、低解析置信度题），用来验证校验闸门和降级通道。",
+  "version": 1,
+  "created_at": "2026-09-24",
+  "questions": [
+    {
+      "id": "sample-01",
+      "source": "api",
+      "source_version": "zhixuewang==1.5.1+adapter-b1",
+      "fetched_at": "2026-09-20T10:00:00+08:00",
+      "parse_confidence": 0.95,
+      "subject": "数学",
+      "grade": "九年级上",
+      "exam": {"name": "第一次月考", "date": "2026-09-15"},
+      "question": {
+        "stem_html": "<p>已知关于 x 的一元二次方程 x<sup>2</sup> - 3x + m = 0 有两个不相等的实数根。</p><p>(1) 求 m 的取值范围；</p><p>(2) 若 x = 1 是方程的一个根，求 m 的值及另一个根。</p>",
+        "images": [],
+        "type": "解答题",
+        "difficulty": 0.62,
+        "difficulty_scale": "0-1",
+        "class_score_rate": 0.41
+      },
+      "answer": {
+        "student_text": "解：(1) 因为方程有两个不相等的实数根，所以 Δ = 9 - 4m > 0，得 m < 9/4。\n(2) 把 x = 1 代入原方程，得 1 - 3 + m = 0，所以 m = 2。此时方程为 x^2 - 3x + 2 = 0，解得 x1 = 1，x2 = 2，所以另一个根是 2。",
+        "student_images": [],
+        "standard": "解：(1) ∵ 方程有两个不相等的实数根，∴ Δ = (-3)^2 - 4m = 9 - 4m > 0，解得 m < 9/4。\n(2) ∵ x = 1 是方程的一个根，∴ 1 - 3 + m = 0，∴ m = 2。由根与系数关系 x1 + x2 = 3，得另一个根 x2 = 3 - 1 = 2。",
+        "analysis_html": "<p>第(1)问考查判别式的符号判断；第(2)问可用代入法或根与系数关系。</p>"
+      },
+      "score": {"got": 5, "full": 8}
+    },
+    {
+      "id": "sample-02",
+      "source": "api",
+      "source_version": "zhixuewang==1.5.1+adapter-b1",
+      "fetched_at": "2026-09-20T10:00:05+08:00",
+      "parse_confidence": 0.9,
+      "subject": "数学",
+      "grade": "九年级上",
+      "exam": {"name": "第一次月考", "date": "2026-09-15"},
+      "question": {
+        "stem_html": "<p>某商品每件成本 40 元，售价 60 元时每月可卖出 300 件。市场调查表明，售价每降低 1 元，月销量增加 20 件。要使月利润为 6120 元，售价应定为多少元？</p>",
+        "images": [],
+        "type": "解答题",
+        "difficulty": 0.71,
+        "difficulty_scale": "0-1",
+        "class_score_rate": 0.28
+      },
+      "answer": {
+        "student_text": "解：设售价为 x 元，则 (x - 40)(300 + 20x) = 6120。化简得 x^2 - 55x + 606 = 0，解得 x = 22 或 33。所以售价定为 22 元或 33 元。",
+        "student_images": [],
+        "standard": "解：设售价降低 x 元，则每件利润为 (60 - x - 40) 元，月销量为 (300 + 20x) 件。\n由题意 (20 - x)(300 + 20x) = 6120，整理得 x^2 - 5x + 6 = 0，解得 x = 2 或 x = 3。\n所以售价为 58 元或 57 元。",
+        "analysis_html": "<p>本题考查二次函数的实际应用（利润问题），关键是设未知量的方式。</p>"
+      },
+      "score": {"got": 2, "full": 10}
+    },
+    {
+      "id": "sample-03",
+      "source": "api",
+      "source_version": "zhixuewang==1.5.1+adapter-b1",
+      "fetched_at": "2026-09-20T10:00:10+08:00",
+      "parse_confidence": 0.95,
+      "subject": "物理",
+      "grade": "九年级上",
+      "exam": {"name": "物理单元测（电路）", "date": "2026-09-18"},
+      "question": {
+        "stem_html": "<p>电源电压恒为 6V，定值电阻 R1 = 10Ω 与 R2 = 20Ω 串联在电路中。求：(1) 电路中的电流；(2) R2 两端的电压。</p>",
+        "images": [],
+        "type": "计算题",
+        "difficulty": 0.35,
+        "difficulty_scale": "0-1",
+        "class_score_rate": 0.82
+      },
+      "answer": {
+        "student_text": "解：(1) I = U / R1 = 6V / 10Ω = 0.6A。(2) U2 = I × R2 = 0.6A × 20Ω = 12V。",
+        "student_images": [],
+        "standard": "解：(1) R1 与 R2 串联，总电阻 R = R1 + R2 = 10Ω + 20Ω = 30Ω。\nI = U / R = 6V / 30Ω = 0.2A。\n(2) U2 = I × R2 = 0.2A × 20Ω = 4V。",
+        "analysis_html": "<p>本题考查串联电路规律与欧姆定律的联用。</p>"
+      },
+      "score": {"got": 0, "full": 6}
+    },
+    {
+      "id": "sample-04",
+      "source": "api",
+      "source_version": "zhixuewang==1.5.1+adapter-b1",
+      "fetched_at": "2026-09-20T10:00:15+08:00",
+      "parse_confidence": 0.95,
+      "subject": "物理",
+      "grade": "九年级上",
+      "exam": {"name": "物理单元测（电路）", "date": "2026-09-18"},
+      "question": {
+        "stem_html": "<p>用滑轮组将重 400N 的物体匀速提升 2m，绳子自由端拉力为 250N，绳子自由端移动了 4m。求该滑轮组的机械效率。</p>",
+        "images": [],
+        "type": "计算题",
+        "difficulty": 0.48,
+        "difficulty_scale": "0-1",
+        "class_score_rate": 0.55
+      },
+      "answer": {
+        "student_text": "解：W有用 = Gh = 400N × 2m = 800J。W总 = Fs = 250N × 2m = 500J。η = W有用 / W总 = 800 / 500 = 160%。",
+        "student_images": [],
+        "standard": "解：W有用 = Gh = 400N × 2m = 800J。\nW总 = Fs = 250N × 4m = 1000J。\nη = W有用 / W总 × 100% = 800J / 1000J × 100% = 80%。",
+        "analysis_html": "<p>注意绳端移动距离 s = nh，不能把 h 直接代入 W总。</p>"
+      },
+      "score": {"got": 2, "full": 6}
+    },
+    {
+      "id": "sample-05",
+      "source": "export",
+      "source_version": "zhixue-export/heuristic-1",
+      "fetched_at": "2026-09-21T19:30:00+08:00",
+      "parse_confidence": 0.85,
+      "subject": "化学",
+      "grade": "九年级上",
+      "exam": {"name": "化学质量守恒检测", "date": "2026-09-19"},
+      "question": {
+        "stem_html": "<p>实验室加热 24.5g 氯酸钾与二氧化锰的混合物制取氧气，充分反应后冷却称量，固体质量减少了 9.6g。求原混合物中氯酸钾的质量分数。</p>",
+        "images": [],
+        "type": "计算题",
+        "difficulty": 0.66,
+        "difficulty_scale": "0-1",
+        "class_score_rate": 0.33
+      },
+      "answer": {
+        "student_text": "解：设氯酸钾质量为 x。\n2KClO3 --MnO2,Δ--> 2KCl + 3O2↑\n245        96\nx          9.6g\n245 / x = 96 / 9.6，解得 x = 24.5g。所以氯酸钾的质量分数为 100%。",
+        "student_images": [],
+        "standard": "解：固体减少的质量即为生成的氧气质量，m(O2) = 9.6g。\n设参加反应的 KClO3 质量为 x。\n2KClO3 --MnO2,Δ--> 2KCl + 3O2↑\n245              96\nx                9.6g\n245 / x = 96 / 9.6g，x = 24.5g。\nw(KClO3) = 24.5g / 24.5g × 100% = 100%。",
+        "analysis_html": "<p>本题考查质量守恒定律与化学方程式计算的结合。</p>"
+      },
+      "score": {"got": 4, "full": 6}
+    },
+    {
+      "id": "sample-06",
+      "source": "api",
+      "source_version": "zhixuewang==1.5.1+adapter-b1",
+      "fetched_at": "2026-09-20T10:00:20+08:00",
+      "parse_confidence": 0.9,
+      "subject": "英语",
+      "grade": "九年级上",
+      "exam": {"name": "英语第一次月考", "date": "2026-09-16"},
+      "question": {
+        "stem_html": "<p>— Where is Tom?<br>— He ___ to the library. He ___ there an hour ago.</p><p>A. has gone; went　B. has been; has gone　C. went; has been　D. has gone; has been</p>",
+        "images": [],
+        "type": "单选题",
+        "difficulty": 0.44,
+        "difficulty_scale": "0-1",
+        "class_score_rate": 0.62
+      },
+      "answer": {
+        "student_text": "D",
+        "student_images": [],
+        "standard": "A",
+        "analysis_html": "<p>第一空用 has gone to 表示「去了还没回来」；第二空有明确的过去时间状语 an hour ago，必须用一般过去时。</p>"
+      },
+      "score": {"got": 0, "full": 1}
+    },
+    {
+      "id": "sample-07",
+      "source": "api",
+      "source_version": "zhixuewang==1.5.1+adapter-b1",
+      "fetched_at": "2026-09-20T10:00:25+08:00",
+      "parse_confidence": 0.9,
+      "subject": "英语",
+      "grade": "九年级上",
+      "exam": {"name": "英语第一次月考", "date": "2026-09-16"},
+      "question": {
+        "stem_html": "<p>He asked me ___.</p><p>A. where did I live　B. where I lived　C. where do I live　D. where I live</p>",
+        "images": [],
+        "type": "单选题",
+        "difficulty": 0.5,
+        "difficulty_scale": "0-1",
+        "class_score_rate": 0.48
+      },
+      "answer": {
+        "student_text": "A",
+        "student_images": [],
+        "standard": "B",
+        "analysis_html": "<p>宾语从句要用陈述语序，且主句为过去时，从句时态要相应后退为过去时。</p>"
+      },
+      "score": {"got": 0, "full": 1}
+    },
+    {
+      "id": "sample-08",
+      "source": "export",
+      "source_version": "zhixue-export/heuristic-1",
+      "fetched_at": "2026-09-21T19:30:05+08:00",
+      "parse_confidence": 0.7,
+      "subject": "语文",
+      "grade": "九年级上",
+      "exam": {"name": "语文基础过关练", "date": "2026-09-14"},
+      "question": {
+        "stem_html": "<p>下列句子没有语病的一项是（　　）</p><p>A. 通过这次活动，使我明白了团队合作的重要性。</p><p>B. 他那和蔼可亲的笑容和亲切的话语时常在我耳边响起。</p><p>C. 我们要养成认真读书、善于思考的好习惯。</p><p>D. 为了防止这类事故不再发生，学校加强了安全管理。</p>",
+        "images": [],
+        "type": "单选题",
+        "difficulty": 0.4,
+        "difficulty_scale": "0-1",
+        "class_score_rate": 0.7
+      },
+      "answer": {
+        "student_text": "D",
+        "student_images": [],
+        "standard": "C",
+        "analysis_html": "<p>A 项缺主语（「通过…使…」）；B 项搭配不当（笑容不能「响起」）；D 项否定不当（「防止…不再发生」）。</p>"
+      },
+      "score": {"got": 0, "full": 3}
+    },
+    {
+      "id": "sample-09",
+      "source": "manual",
+      "source_version": "manual-entry",
+      "fetched_at": "2026-09-22T21:00:00+08:00",
+      "parse_confidence": 0.55,
+      "subject": "数学",
+      "grade": "九年级上",
+      "exam": {"name": "圆的专题小测", "date": "2026-09-21"},
+      "question": {
+        "stem_html": "<p>如图，AB 是 ⊙O 的直径，点 C 在 ⊙O 上，过点 C 作 ⊙O 的切线 CD，交 AB 的延长线于点 D。求证：∠ACD = ∠ABC。</p>",
+        "images": ["sample09_stem.png"],
+        "type": "证明题",
+        "difficulty": 0.58,
+        "difficulty_scale": "0-1",
+        "class_score_rate": 0.36
+      },
+      "answer": {
+        "student_text": null,
+        "student_images": ["sample09_ans.jpg"],
+        "standard": "证明：连接 OC。∵ CD 是 ⊙O 的切线，∴ OC ⊥ CD，即 ∠OCD = 90°。\n∵ AB 是直径，∴ ∠ACB = 90°。\n∴ ∠ACD = 90° - ∠OCA = ∠ACB - ∠OCA = ∠OCB。\n又 ∵ OB = OC，∴ ∠OBC = ∠OCB。∴ ∠ACD = ∠ABC。",
+        "analysis_html": "<p>切线性质 + 直径所对圆周角为直角的联用。</p>"
+      },
+      "score": {"got": 0, "full": 8}
+    },
+    {
+      "id": "sample-10",
+      "source": "api",
+      "source_version": "zhixuewang==1.5.1+adapter-b1",
+      "fetched_at": "2026-09-20T10:00:30+08:00",
+      "parse_confidence": 0.45,
+      "subject": "数学",
+      "grade": "九年级上",
+      "exam": {"name": "统计与概率随堂测", "date": "2026-09-12"},
+      "question": {
+        "stem_html": "",
+        "images": ["sample10_stem.png"],
+        "type": "填空题",
+        "difficulty": 0.5,
+        "difficulty_scale": "0-1",
+        "class_score_rate": 0.5
+      },
+      "answer": {
+        "student_text": null,
+        "student_images": ["sample10_ans.jpg"],
+        "standard": null,
+        "analysis_html": null
+      },
+      "score": {"got": 0, "full": 3}
+    }
+  ]
+}

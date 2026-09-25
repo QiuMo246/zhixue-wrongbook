@@ -1,0 +1,188 @@
+{
+  "_readme": "宿主模型『本该提交』的分析结果样例，用于在没有真实模型的情况下验证 submit_analysis 的三道闸门。valid 里的必须全部通过；invalid 里的必须全部被拒绝（负例测试）。evidence 里带「」的片段都是原文引用，可在题干/标准答案/学生作答中定位。",
+  "version": 1,
+  "valid": [
+    {
+      "ref": "sample-01",
+      "error_type": "表达不规范",
+      "knowledge_points": ["数学/一元二次方程/公式法与判别式", "数学/一元二次方程/根与系数关系"],
+      "evidence": [
+        "「解得 x1 = 1，x2 = 2，所以另一个根是 2」——直接给出结果，未说明依据是根与系数关系，过程不完整被扣分"
+      ],
+      "confidence": 0.78,
+      "analyzed_by": "host:sample-fixture",
+      "prompt_version": "analyze-v3"
+    },
+    {
+      "ref": "sample-02",
+      "error_type": "方法选择错误",
+      "knowledge_points": ["数学/二次函数/实际应用"],
+      "evidence": [
+        "「设售价为 x 元，则 (x - 40)(300 + 20x) = 6120」——把售价直接当未知量，没有按「降低的金额」建模，销量表达式因此写错"
+      ],
+      "confidence": 0.83,
+      "analyzed_by": "host:sample-fixture",
+      "prompt_version": "analyze-v3"
+    },
+    {
+      "ref": "sample-03",
+      "error_type": "审题失误",
+      "knowledge_points": ["物理/电路与欧姆定律/欧姆定律", "物理/电路与欧姆定律/串联并联规律"],
+      "evidence": [
+        "「I = U / R1 = 6V / 10Ω = 0.6A」——题干写明 R1 与 R2 串联，学生只代入 R1，漏看了串联这一条件"
+      ],
+      "confidence": 0.86,
+      "analyzed_by": "host:sample-fixture",
+      "prompt_version": "analyze-v3"
+    },
+    {
+      "ref": "sample-04",
+      "error_type": "概念不清",
+      "knowledge_points": ["物理/简单机械与功/机械效率"],
+      "evidence": [
+        "「W总 = Fs = 250N × 2m = 500J」——W总 = Fs 中的 s 是绳端移动距离 4m，学生用了物体上升高度 2m，结果算出 160%"
+      ],
+      "confidence": 0.88,
+      "analyzed_by": "host:sample-fixture",
+      "prompt_version": "analyze-v3"
+    },
+    {
+      "ref": "sample-05",
+      "error_type": "表达不规范",
+      "knowledge_points": ["化学/化学方程式/根据化学方程式的计算"],
+      "evidence": [
+        "「245 / x = 96 / 9.6，解得 x = 24.5g。所以氯酸钾的质量分数为 100%」——未写出「固体减少的质量即生成氧气的质量」这一关键依据，扣过程分"
+      ],
+      "confidence": 0.72,
+      "analyzed_by": "host:sample-fixture",
+      "prompt_version": "analyze-v3"
+    },
+    {
+      "ref": "sample-06",
+      "error_type": "概念不清",
+      "knowledge_points": ["英语/时态与语态/现在完成时"],
+      "evidence": [
+        "「has gone; has been」——第二空选了 has been，忽略了 an hour ago 这一明确的过去时间状语，时态判断错误"
+      ],
+      "confidence": 0.9,
+      "analyzed_by": "host:sample-fixture",
+      "prompt_version": "analyze-v3"
+    },
+    {
+      "ref": "sample-07",
+      "error_type": "概念不清",
+      "knowledge_points": ["英语/从句/宾语从句"],
+      "evidence": [
+        "「where did I live」——选了疑问语序，宾语从句必须用陈述语序，语序规则未掌握"
+      ],
+      "confidence": 0.88,
+      "analyzed_by": "host:sample-fixture",
+      "prompt_version": "analyze-v3"
+    },
+    {
+      "ref": "sample-08",
+      "error_type": "概念不清",
+      "knowledge_points": ["语文/基础知识/病句辨析"],
+      "evidence": [
+        "「为了防止这类事故不再发生，学校加强了安全管理」——该句「防止」与「不再」双重否定表肯定，学生未识别出否定不当"
+      ],
+      "confidence": 0.85,
+      "analyzed_by": "host:sample-fixture",
+      "prompt_version": "analyze-v3"
+    },
+    {
+      "ref": "sample-09",
+      "error_type": "概念不清",
+      "knowledge_points": ["数学/圆/切线的判定与性质"],
+      "evidence": [
+        "「AB 是 ⊙O 的直径」——标准解法需要连接 OC 构造半径，学生手写作答图片中看不出是否作出了这条辅助线"
+      ],
+      "confidence": 0.45,
+      "needs_review": true,
+      "analyzed_by": "host:sample-fixture",
+      "prompt_version": "analyze-v3",
+      "_note": "手写图片看不清 → 置信度 0.45，按规则必须 needs_review=true"
+    },
+    {
+      "ref": "sample-10",
+      "error_type": "概念不清",
+      "knowledge_points": ["数学/统计与概率/概率初步"],
+      "evidence": [
+        "学生作答图片 sample10_ans.jpg 中计算过程不完整，无法判断是概念问题还是计算问题"
+      ],
+      "confidence": 0.3,
+      "needs_review": true,
+      "analyzed_by": "host:sample-fixture",
+      "prompt_version": "analyze-v3",
+      "_note": "题干与作答都是图片，无文本语料 → 证据无法做字符串定位，走「无法校验」分支并强制复核"
+    }
+  ],
+  "invalid": [
+    {
+      "ref": "sample-01",
+      "case": "错因不在 8 类枚举内",
+      "error_type": "粗心",
+      "knowledge_points": ["数学/一元二次方程/公式法与判别式"],
+      "evidence": ["「解得 x1 = 1，x2 = 2，所以另一个根是 2」——过程不完整"],
+      "confidence": 0.7,
+      "analyzed_by": "host:negative-test",
+      "prompt_version": "analyze-v3",
+      "expect_error_keyword": "error_type"
+    },
+    {
+      "ref": "sample-01",
+      "case": "知识点不在受控词表内",
+      "error_type": "计算错误",
+      "knowledge_points": ["数学/一元二次方程/判别式的符号"],
+      "evidence": ["「解得 x1 = 1，x2 = 2，所以另一个根是 2」——过程不完整"],
+      "confidence": 0.7,
+      "analyzed_by": "host:negative-test",
+      "prompt_version": "analyze-v3",
+      "expect_error_keyword": "不在受控词表内"
+    },
+    {
+      "ref": "sample-03",
+      "case": "证据无法定位（纯主观评价）",
+      "error_type": "概念不清",
+      "knowledge_points": ["物理/电路与欧姆定律/欧姆定律"],
+      "evidence": ["这个学生基础比较薄弱，平时做题就不认真"],
+      "confidence": 0.6,
+      "analyzed_by": "host:negative-test",
+      "prompt_version": "analyze-v3",
+      "expect_error_keyword": "无法在题干"
+    },
+    {
+      "ref": "sample-04",
+      "case": "缺少 prompt_version（不可追溯）",
+      "error_type": "概念不清",
+      "knowledge_points": ["物理/简单机械与功/机械效率"],
+      "evidence": ["「W总 = Fs = 250N × 2m = 500J」——用了错误的高度"],
+      "confidence": 0.8,
+      "analyzed_by": "host:negative-test",
+      "prompt_version": "",
+      "expect_error_keyword": "prompt_version"
+    },
+    {
+      "ref": "sample-05",
+      "case": "confidence 超出 0~1",
+      "error_type": "表达不规范",
+      "knowledge_points": ["化学/化学方程式/根据化学方程式的计算"],
+      "evidence": ["「245 / x = 96 / 9.6，解得 x = 24.5g」——未说明关键依据"],
+      "confidence": 1.5,
+      "analyzed_by": "host:negative-test",
+      "prompt_version": "analyze-v3",
+      "expect_error_keyword": "confidence"
+    },
+    {
+      "ref": "sample-06",
+      "case": "知识点为空",
+      "error_type": "概念不清",
+      "knowledge_points": [],
+      "evidence": ["「has gone; has been」——第二空时态选错"],
+      "confidence": 0.8,
+      "analyzed_by": "host:negative-test",
+      "prompt_version": "analyze-v3",
+      "expect_error_keyword": "knowledge_points"
+    }
+  ]
+}

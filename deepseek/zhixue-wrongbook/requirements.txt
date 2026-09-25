@@ -1,0 +1,39 @@
+# 依赖清单。安装：.venv/Scripts/python -m pip install -r requirements.txt
+#
+# 版本按 2026-09-24 实测通过的环境钉住。
+# 特别注意 mcp：2.x 把 FastMCP 改名成了 MCPServer，server.py 里做了双版本兼容，
+# 所以 1.x / 2.x 都能跑，但钉住 2.x 免得踩 API 变更。
+
+# --- MCP Server ---
+mcp>=2.2,<3
+
+# --- 数据模型与配置 ---
+pydantic>=2.13,<3
+PyYAML>=6.0,<7
+
+# --- Cookie 安全存储（Windows 凭据管理器 / macOS Keychain） ---
+keyring>=25.7,<26
+
+# --- 通道 B：现成库（错题本接口） ---
+zhixuewang>=1.5.1,<2
+
+# --- 通道 A：官方导出文件解析 ---
+pypdf>=6.19,<7
+python-docx>=1.2,<2
+
+# --- HTTP ---
+requests>=2.34,<3
+
+# --- 可选：导出 Excel 错题本时需要 ---
+# 没装也能跑，zx_export_wrongbook(fmt="xlsx") 会返回一条明确提示
+# （提示能到达宿主 —— 2026-09-24 修了异常抛穿 MCP 的缺陷，见 server.py 的 _guard）。
+# 两条路都实测过：装了 → xlsx 正常写出且能读回；没装 → 结构化错误 + pip 安装命令。
+# openpyxl>=3.1
+
+# --- 可选：读「原始答题卡填涂卡」时需要 ---
+# 用途：错题本接口不返回选择题的学生选项，得把 get_original() 下载的答题卡扫描图
+#       裁剪放大后读出来。用 PIL 做裁剪+放大。
+# 只在**分析侧**需要，MCP Server 本身不用它 —— 所以是可选的。
+# 2026-09-25 已装进项目 venv（`pip install pillow`）。没装的话也可以借用
+# 系统 Python（本机 3.11 自带 PIL）跑图片处理脚本。
+# pillow>=11

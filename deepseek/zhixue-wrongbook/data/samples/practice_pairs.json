@@ -1,0 +1,109 @@
+{
+  "_readme": "阈值校准用的标注数据。⚠ 重要诚实声明：这里的标注是**合成样例**（我按题目内容人工判定的），不是从真实错题库里标出来的。它的作用是让 tools/calibrate.py 能跑起来、能画分布、能给出「阈值该定在哪」的方法演示；**不能**把跑出来的阈值当成已验证结论。真正校准需要你自己标 30~50 对真实题目。见 docs/验收报告.md 的「已知局限」。",
+  "version": 1,
+  "created_at": "2026-09-24",
+  "label_meaning": "label=1 表示候选题与目标题「同知识点同难度」，可以当同类练习题；label=0 表示不可以。",
+  "targets": {
+    "t-quad": {
+      "subject": "数学",
+      "qtype": "解答题",
+      "knowledge_points": ["数学/一元二次方程/公式法与判别式", "数学/一元二次方程/根与系数关系"],
+      "difficulty": 0.62,
+      "stem_text": "已知关于 x 的一元二次方程 x^2 - 3x + m = 0 有两个不相等的实数根。求 m 的取值范围；若 x = 1 是方程的一个根，求 m 的值及另一个根。"
+    },
+    "t-quadapp": {
+      "subject": "数学",
+      "qtype": "解答题",
+      "knowledge_points": ["数学/二次函数/实际应用"],
+      "difficulty": 0.71,
+      "stem_text": "某商品每件成本 40 元，售价 60 元时每月可卖出 300 件。售价每降低 1 元，月销量增加 20 件。要使月利润为 6120 元，售价应定为多少元？"
+    },
+    "t-ohm": {
+      "subject": "物理",
+      "qtype": "计算题",
+      "knowledge_points": ["物理/电路与欧姆定律/欧姆定律", "物理/电路与欧姆定律/串联并联规律"],
+      "difficulty": 0.35,
+      "stem_text": "电源电压恒为 6V，定值电阻 R1 = 10Ω 与 R2 = 20Ω 串联在电路中。求电路中的电流和 R2 两端的电压。"
+    },
+    "t-eff": {
+      "subject": "物理",
+      "qtype": "计算题",
+      "knowledge_points": ["物理/简单机械与功/机械效率"],
+      "difficulty": 0.48,
+      "stem_text": "用滑轮组将重 400N 的物体匀速提升 2m，绳子自由端拉力为 250N，绳子自由端移动了 4m。求该滑轮组的机械效率。"
+    },
+    "t-tense": {
+      "subject": "英语",
+      "qtype": "单选题",
+      "knowledge_points": ["英语/时态与语态/现在完成时"],
+      "difficulty": 0.44,
+      "stem_text": "— Where is Tom? — He ___ to the library. He ___ there an hour ago. A. has gone; went B. has been; has gone C. went; has been D. has gone; has been"
+    }
+  },
+  "pairs": [
+    {"id": "p01", "target": "t-quad", "label": 1, "note": "换数字，同知识点同难度",
+     "candidate": {"qtype": "解答题", "knowledge_points": ["数学/一元二次方程/公式法与判别式", "数学/一元二次方程/根与系数关系"], "difficulty": 0.6, "steps": 3,
+       "stem_text": "已知关于 x 的方程 x^2 - 5x + k = 0 有两个不相等的实数根。求 k 的取值范围；若 x = 2 是方程的一个根，求 k 的值及另一个根。"}},
+    {"id": "p02", "target": "t-quad", "label": 1, "note": "换情境，同知识点",
+     "candidate": {"qtype": "解答题", "knowledge_points": ["数学/一元二次方程/公式法与判别式"], "difficulty": 0.68, "steps": 3,
+       "stem_text": "判断关于 x 的方程 x^2 - 2x + (m - 1) = 0 的根的情况，并说明理由。"}},
+    {"id": "p03", "target": "t-quad", "label": 0, "note": "同章节但换了知识点（配方法 vs 判别式）",
+     "candidate": {"qtype": "解答题", "knowledge_points": ["数学/一元二次方程/配方法"], "difficulty": 0.6, "steps": 3,
+       "stem_text": "用配方法解方程 x^2 - 6x + 5 = 0。"}},
+    {"id": "p04", "target": "t-quad", "label": 0, "note": "跨章节（二次函数）",
+     "candidate": {"qtype": "解答题", "knowledge_points": ["数学/二次函数/最值问题"], "difficulty": 0.65, "steps": 3,
+       "stem_text": "求二次函数 y = x^2 - 4x + 3 的最小值。"}},
+
+    {"id": "p05", "target": "t-quadapp", "label": 1, "note": "同知识点，换数字",
+     "candidate": {"qtype": "解答题", "knowledge_points": ["数学/二次函数/实际应用"], "difficulty": 0.7, "steps": 4,
+       "stem_text": "某商品成本 30 元，售价 50 元时每月卖出 200 件，售价每降 1 元销量增加 10 件。要月利润 4000 元，售价定为多少？"}},
+    {"id": "p06", "target": "t-quadapp", "label": 1, "note": "同知识点，换情境（面积问题也属二次函数实际应用）",
+     "candidate": {"qtype": "解答题", "knowledge_points": ["数学/二次函数/实际应用"], "difficulty": 0.75, "steps": 4,
+       "stem_text": "用长 20m 的篱笆围成一个矩形花园，求面积最大时的长和宽。"}},
+    {"id": "p07", "target": "t-quadapp", "label": 0, "note": "难度差 0.2，超阈值",
+     "candidate": {"qtype": "解答题", "knowledge_points": ["数学/二次函数/实际应用"], "difficulty": 0.95, "steps": 6,
+       "stem_text": "某厂生产一种产品，成本与销量均为一次函数，求最大利润并讨论参数范围。"}},
+    {"id": "p08", "target": "t-quadapp", "label": 0, "note": "题型不一致",
+     "candidate": {"qtype": "填空题", "knowledge_points": ["数学/二次函数/实际应用"], "difficulty": 0.7, "steps": 1,
+       "stem_text": "商品售价为 58 元时的月利润是 ____ 元。"}},
+
+    {"id": "p09", "target": "t-ohm", "label": 1, "note": "同知识点，换数字",
+     "candidate": {"qtype": "计算题", "knowledge_points": ["物理/电路与欧姆定律/欧姆定律", "物理/电路与欧姆定律/串联并联规律"], "difficulty": 0.4, "steps": 2,
+       "stem_text": "电源电压 12V，R1 = 20Ω 与 R2 = 40Ω 串联，求电路电流和 R1 两端电压。"}},
+    {"id": "p10", "target": "t-ohm", "label": 1, "note": "同知识点，并联情境",
+     "candidate": {"qtype": "计算题", "knowledge_points": ["物理/电路与欧姆定律/欧姆定律", "物理/电路与欧姆定律/串联并联规律"], "difficulty": 0.42, "steps": 2,
+       "stem_text": "电源电压 6V，R1 = 10Ω 与 R2 = 15Ω 并联，求干路电流。"}},
+    {"id": "p11", "target": "t-ohm", "label": 0, "note": "跨章节（电功率）",
+     "candidate": {"qtype": "计算题", "knowledge_points": ["物理/电功与电功率/电功率"], "difficulty": 0.4, "steps": 2,
+       "stem_text": "某用电器两端电压 220V，通过的电流为 0.5A，求它的电功率。"}},
+    {"id": "p12", "target": "t-ohm", "label": 0, "note": "难度偏低但知识点同 —— 用于观察难度闸门的作用",
+     "candidate": {"qtype": "计算题", "knowledge_points": ["物理/电路与欧姆定律/欧姆定律"], "difficulty": 0.15, "steps": 1,
+       "stem_text": "已知 U = 6V，R = 3Ω，求 I。"}},
+
+    {"id": "p13", "target": "t-eff", "label": 1, "note": "同知识点，换数字",
+     "candidate": {"qtype": "计算题", "knowledge_points": ["物理/简单机械与功/机械效率"], "difficulty": 0.5, "steps": 2,
+       "stem_text": "用滑轮组将重 600N 的物体提升 1m，绳端拉力 250N，绳端移动 3m，求机械效率。"}},
+    {"id": "p14", "target": "t-eff", "label": 1, "note": "斜面情境，同知识点",
+     "candidate": {"qtype": "计算题", "knowledge_points": ["物理/简单机械与功/机械效率"], "difficulty": 0.52, "steps": 2,
+       "stem_text": "沿长 5m 的斜面把重 400N 的物体推到高 2m 处，推力 200N，求斜面机械效率。"}},
+    {"id": "p15", "target": "t-eff", "label": 0, "note": "同章节不同知识点（功与功率）",
+     "candidate": {"qtype": "计算题", "knowledge_points": ["物理/简单机械与功/功与功率"], "difficulty": 0.48, "steps": 2,
+       "stem_text": "用 50N 的水平推力推动物体前进 4m，求推力做的功。"}},
+    {"id": "p16", "target": "t-eff", "label": 0, "note": "同章节不同知识点（杠杆）",
+     "candidate": {"qtype": "计算题", "knowledge_points": ["物理/简单机械与功/杠杆平衡条件"], "difficulty": 0.45, "steps": 2,
+       "stem_text": "杠杆动力臂 0.2m，阻力 100N，阻力臂 0.5m，求动力。"}},
+
+    {"id": "p17", "target": "t-tense", "label": 1, "note": "同知识点同题型",
+     "candidate": {"qtype": "单选题", "knowledge_points": ["英语/时态与语态/现在完成时"], "difficulty": 0.42, "steps": 1,
+       "stem_text": "— How long ___ you ___ in this city? — For ten years. A. did; live B. have; lived C. do; live D. will; live"}},
+    {"id": "p18", "target": "t-tense", "label": 1, "note": "同知识点同题型",
+     "candidate": {"qtype": "单选题", "knowledge_points": ["英语/时态与语态/现在完成时"], "difficulty": 0.46, "steps": 1,
+       "stem_text": "My father ___ the car since 2015. A. bought B. has bought C. has had D. buys"}},
+    {"id": "p19", "target": "t-tense", "label": 0, "note": "跨章节（从句）",
+     "candidate": {"qtype": "单选题", "knowledge_points": ["英语/从句/宾语从句"], "difficulty": 0.44, "steps": 1,
+       "stem_text": "He asked me ___. A. where did I live B. where I lived C. where do I live D. where I live"}},
+    {"id": "p20", "target": "t-tense", "label": 0, "note": "同章节不同知识点（被动语态）",
+     "candidate": {"qtype": "单选题", "knowledge_points": ["英语/时态与语态/被动语态"], "difficulty": 0.44, "steps": 1,
+       "stem_text": "The window ___ by Tom yesterday. A. broke B. was broken C. is broken D. breaks"}}
+  ]
+}
