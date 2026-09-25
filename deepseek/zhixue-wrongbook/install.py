@@ -5,6 +5,15 @@
     python install.py --account 13x --password xxx
                                    # 顺带完成登录（= 用户唯一一次"登录"）
 
+2026-09-25 针对学生环境（没 Python / 没 git）补的两条路：
+
+  1. **没有系统 Python**：AI 助手（WorkBuddy/ZCode）自带 Python
+     （~/.workbuddy-ai/binaries/python/current/python.exe），用它跑本脚本即可。
+     venv 创建失败时自动降级为「无 venv 模式」，依赖直接装进当前解释器。
+     `--find-python` 可以列出本机所有可用的 Python，供 AI 选择。
+  2. **没有 git**：`--from-zip` 直接下载 GitHub 的 zip 包解开（纯 urllib，
+     不依赖 git），解完接着走正常安装。
+
 做完之后用户对 AI 助手说「帮我同步错题」就能用了。
 """
 
@@ -12,36 +21,140 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
 import time
+import urllib.request
+import zipfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
-VENV = ROOT / ".venv"
-IS_WIN = sys.platform == "win32"
-PY = VENV / ("Scripts/python.exe" if IS_WIN else "bin/python")
-
 REQUIRED_IMPORTS = ["mcp", "pydantic", "yaml", "keyring", "requests", "PIL"]
+
+REPO = "QiuMo246/zhixue-wrongbook"
+REPO_BRANCH = "main"
+
+# 全局：venv 不可用时降级为「无 venv 模式」，PY 指向当前解释器
+ROOT = Path(__file__).resolve().parent
+VENV: Path | None = ROOT / ".venv"
+PY: Path = ROOT / ".venv" / ("Scripts/python.exe" if os.name == "nt"
+                             else "bin/python")
 
 
 def step(msg: str) -> None:
     print(f"\n==> {msg}")
 
 
-def ensure_venv() -> None:
+# ---------------------------------------------------------------------------
+# Python 探测：学生机器没有系统 Python 时，用 AI 助手自带的
+# ---------------------------------------------------------------------------
+def known_pythons() -> list[Path]:
+    """常见 AI 助手自带的 Python，按优先级排。"""
+    home = Path.home()
+    cands = [
+        home / ".workbuddy-ai" / "binaries" / "python" / "current" / "python.exe",
+        home / ".workbuddy-ai" / "binaries" / "python" / "current" / "bin" / "python3",
+        home / ".zcode" / "binaries" / "python" / "current" / "python.exe",
+    ]
+    # versions/<ver>/ 兜底
+    for base in (home / ".workbuddy-ai" / "binaries" / "python" / "versions",
+                 home / ".zcode" / "binaries" / "python" / "versions"):
+        if base.exists():
+            for d in sorted(base.iterdir(), reverse=True):
+                cands.append(d / "python.exe")
+                cands.append(d / "bin" / "python3")
+    return [c for c in cands if c.exists()]
+
+
+def find_python() -> str:
+    """打印本机可用的 Python（给 AI 看的排障入口）。"""
+    print("sys.executable =", sys.executable)
+    print("AI 助手自带的 Python：")
+    found = known_pythons()
+    for c in found or ["（没找到）"]:
+        print("  ", c)
+    return sys.executable
+
+
+# ---------------------------------------------------------------------------
+# zip 兜底：没有 git 也能拿到代码
+# ---------------------------------------------------------------------------
+def locate_project(root: Path) -> Path:
+    """在 root 里定位真正的项目目录（含 server.py + requirements.txt）。
+
+    仓库可能是「工作区」布局：项目嵌在 deepseek/zhixue-wrongbook/ 里。
+    两种布局都要能装，学生不应该关心目录结构。
+    """
+    if (root / "requirements.txt").exists() and (root / "server.py").exists():
+        return root
+    if root.name == "zhixue-wrongbook":
+        return root
+    for cand in sorted(root.rglob("install.py")):
+        d = cand.parent
+        if (d / "requirements.txt").exists() and (d / "server.py").exists():
+            return d
+    raise SystemExit(
+        f"在 {root} 下没找到项目（server.py + requirements.txt）。"
+        "把这段输出发给你的 AI 排查。")
+
+
+def fetch_from_zip(target: Path, url: str = "") -> Path:
+    """下载仓库 zip 并解开到 target（剥掉顶层目录）。纯标准库，不需要 git。"""
+    url = url or f"https://codeload.github.com/{REPO}/zip/refs/heads/{REPO_BRANCH}"
+    step(f"下载仓库 zip：{url}")
+    tmp = target.parent / "_repo.zip"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with urllib.request.urlopen(url, timeout=120) as r, open(tmp, "wb") as f:
+        f.write(r.read())
+    step(f"解压到 {target}")
+    with zipfile.ZipFile(tmp) as z:
+        z.extractall(target.parent)
+    tmp.unlink()
+    # zip 顶层目录是 <仓库名>-<分支>/（不带用户名），剥掉这层挪到 target
+    repo_name = REPO.split("/")[-1]
+    extracted = target.parent / f"{repo_name}-{REPO_BRANCH}"
+    if extracted.exists():
+        if target.exists():
+            raise SystemExit(
+                f"{target} 已存在 —— 换个 --target 或先删掉再试。")
+        extracted.rename(target)
+    elif not target.exists():
+        raise SystemExit("解压后没找到仓库目录，请把上面的输出发给 AI 排查。")
+    return target
+
+
+# ---------------------------------------------------------------------------
+# venv：创建失败自动降级为无 venv 模式
+# ---------------------------------------------------------------------------
+def ensure_venv(use_venv: bool = True) -> None:
+    global VENV, PY
+    if not use_venv:
+        VENV, PY = None, Path(sys.executable)
+        print("按 --no-venv 跳过虚拟环境，依赖将装进当前解释器。")
+        return
+    # ROOT 可能被 --from-zip 改写过，venv 路径必须按当前 ROOT 重算
+    VENV = ROOT / ".venv"
+    PY = VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     if PY.exists():
         print(f".venv 已存在，跳过创建（{PY}）")
         return
     step("创建虚拟环境 .venv")
-    subprocess.run([sys.executable, "-m", "venv", str(VENV)], check=True)
+    try:
+        subprocess.run([sys.executable, "-m", "venv", str(VENV)], check=True)
+        if not PY.exists():
+            raise RuntimeError("venv 创建后没有生成解释器")
+    except Exception as exc:
+        VENV, PY = None, Path(sys.executable)
+        print(f"⚠ venv 创建失败（{exc}）—— 降级为无 venv 模式，"
+              f"依赖直接装进 {PY}。")
 
 
 def install_deps() -> None:
-    step("安装依赖（requirements.txt + pillow + openpyxl）")
-    subprocess.run([str(PY), "-m", "pip", "install", "--quiet", "--upgrade", "pip"],
-                   check=True)
+    step("安装依赖（requirements.txt + pillow + openpyxl）"
+         + ("" if VENV else "（无 venv 模式 → 装进当前解释器）"))
+    subprocess.run([str(PY), "-m", "pip", "install", "--quiet",
+                    "--upgrade", "pip"], check=True)
     subprocess.run([str(PY), "-m", "pip", "install", "--quiet",
                     "-r", str(ROOT / "requirements.txt"),
                     "pillow>=11", "openpyxl>=3.1"], check=True)
@@ -57,11 +170,11 @@ def verify_imports() -> None:
     print("全部可导入 ✓")
 
 
+# ---------------------------------------------------------------------------
+# MCP 配置
+# ---------------------------------------------------------------------------
 def mcp_entry() -> dict:
-    return {
-        "command": str(PY),
-        "args": [str(ROOT / "server.py")],
-    }
+    return {"command": str(PY), "args": [str(ROOT / "server.py")]}
 
 
 def print_mcp_config() -> None:
@@ -86,7 +199,8 @@ def auto_config() -> None:
             if not path.parent.exists():
                 print(f"  跳过 {path}（没有这个 AI 助手）")
                 continue
-            cfg = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+            cfg = json.loads(path.read_text(encoding="utf-8")) \
+                if path.exists() else {}
             servers = cfg.setdefault("mcpServers", {})
             if "zhixue-wrongbook" in servers:
                 print(f"  跳过 {path}（已配置过）")
@@ -114,12 +228,13 @@ def setup_account(account: str, password: str) -> None:
 
 
 def next_steps() -> None:
-    print("""
+    venv_note = "" if VENV else "（无 venv 模式：把命令里的 .venv 路径换成你跑 install.py 的那个 Python）"
+    print(f"""
 ==================================================================
 安装完成。接下来：
   1) 重启你的 AI 助手（或到连接器管理里点「信任」），让新 MCP 生效
   2) 如果刚才没录入账号密码，跑：
-       .venv/Scripts/python tools/setup_account.py
+       .venv/Scripts/python tools/setup_account.py   {venv_note}
      （这是你唯一一次需要"登录"—— 之后失效会自动重登）
   3) 对 AI 助手说「帮我同步错题」即可开始使用
 ==================================================================
@@ -132,9 +247,31 @@ def main() -> int:
                     help="自动把 MCP 配置写入检测到的 AI 助手")
     ap.add_argument("--account", default="", help="智学网账号（手机号/准考证号）")
     ap.add_argument("--password", default="", help="密码（不带则跳过登录步骤）")
+    ap.add_argument("--from-zip", nargs="?", const="default", default="",
+                    help="没有 git 时的兜底：直接下载仓库 zip 解压后安装"
+                         "（不带 URL 用默认仓库）")
+    ap.add_argument("--target", default="",
+                    help="配合 --from-zip：解压目标目录（默认 ./zhixue-wrongbook）")
+    ap.add_argument("--no-venv", action="store_true",
+                    help="跳过 venv，依赖直接装进当前解释器")
+    ap.add_argument("--find-python", action="store_true",
+                    help="只列出本机可用的 Python（含 AI 助手自带的）")
     args = ap.parse_args()
 
-    ensure_venv()
+    if args.find_python:
+        find_python()
+        return 0
+
+    if args.from_zip:
+        target = Path(args.target or "zhixue-wrongbook").resolve()
+        url = "" if args.from_zip in ("", "default") else args.from_zip
+        new_root = locate_project(fetch_from_zip(target, url))
+        # 重新定位 ROOT 并切换过去继续安装
+        global ROOT
+        ROOT = new_root
+        os.chdir(ROOT)
+
+    ensure_venv(use_venv=not args.no_venv)
     install_deps()
     verify_imports()
     print_mcp_config()
