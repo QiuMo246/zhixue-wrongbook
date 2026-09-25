@@ -35,7 +35,7 @@
 
 ### 0. 学生最懒安装法（推荐）：把下面这段话发给你的 AI 助手
 
-> 帮我安装智学网错题助手：从 GitHub 克隆 `<仓库地址>` 到本地，运行它根目录的
+> 帮我安装智学网错题助手：从 GitHub 克隆 https://github.com/QiuMo246/zhixue-wrongbook 到本地，运行它根目录的
 > `python install.py --config --account <我的账号> --password <我的密码>`，
 > 然后重启 MCP 连接。装好后对我说「帮我同步错题」我应该能用。
 > 遇到报错就自己排查修好，卡住了再问我。
