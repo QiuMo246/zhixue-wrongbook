@@ -353,6 +353,65 @@ async def main() -> int:
     r2 = json.loads(text_of(await call("zx_session_clear", {})))
     log("重复清除不报错（幂等）", r2.get("ok") is True, str(r2.get("removed")))
 
+    # ---- 10e. 工具清单不变量（包五，2026-09-26，移植自 qwen 分支） ----
+    # 背景：README 与验收报告曾写「20 个工具」，实际 server.py 已有 22 个
+    # @mcp.tool —— 文档漂移发生过不止一次。qwen 分支的解法是把「工具清单」
+    # 本身做成机制不变量：新加工具不更新这张表，测试直接红。
+    EXPECTED_TOOLS = sorted([
+        "zx_session_set", "zx_session_status", "zx_session_clear",
+        "zx_account_set", "zx_account_clear",
+        "zx_list_exams", "zx_sync", "zx_import_export_file",
+        "get_questions", "zx_knowledge_points",
+        "submit_analysis", "submit_solution", "check_practice",
+        "zx_subjects", "zx_profile", "zx_diagnosis", "zx_diagnosis_log",
+        "zx_review_queue", "zx_export_paper", "zx_export_wrongbook",
+        "zx_purge", "zx_sync_log",
+    ])
+    extra = sorted(set(names) - set(EXPECTED_TOOLS))
+    missing = sorted(set(EXPECTED_TOOLS) - set(names))
+    log("工具清单不变量：tools/list 与登记表逐项相等",
+        names == EXPECTED_TOOLS,
+        ("多出 %r —— 请同步更新 mcp_e2e.EXPECTED_TOOLS / README / 验收报告"
+         % extra) if extra else
+        ("缺失 %r" % missing) if missing else
+        f"{len(names)} 个工具，与登记表一致")
+
+    # ---- 10f. 出口 PII 扫描（包五）：不该带个人信息的出口绝不能带 ----
+    # 与 qwen 分支「全工具禁 PII」不同：本架构里 get_questions 把题面交给
+    # 宿主模型是**设计内**的（分析必须读题），所以扫描范围限定在
+    # **元数据/聚合类出口**——它们的职责里根本没有出现学生原文的理由。
+    # 先造一道含 PII 的题（第二场考试），证明扫描不是空转：
+    pii_file = TMP / "export_pii.txt"
+    pii_file.write_text(
+        "错题回卷 数学\n\n"
+        "1. 计算 (3x-2)(3x+2) 的结果。（学生：张小明，阳光中学，家长电话"
+        "13812345678，邮箱 zhangxm@example.com）\n"
+        "答案：9x^2 - 4\n"
+        "学生答案：9x^2 + 4\n"
+        "得分：0/4\n",
+        encoding="utf-8")
+    r = json.loads(text_of(await call("zx_import_export_file", {
+        "path": str(pii_file), "subject": "数学",
+        "exam_name": "错题回卷", "exam_date": "2026-09-20"})))
+    log("含 PII 的题已入库（扫描前提）",
+        r.get("ok") and r["imported"]["added"] == 1,
+        f"added={r.get('imported', {}).get('added')}")
+    CANARIES = ["13812345678", "张小明", "阳光中学", "zhangxm@example.com"]
+    r = json.loads(text_of(await call("get_questions", {"subject": "数学"})))
+    seed_ok = all(c in json.dumps(r, ensure_ascii=False) for c in CANARIES)
+    log("扫描不空转：get_questions（设计内的题面出口）确实含 PII 原文",
+        seed_ok, "题面按设计原样出境，由宿主在对话层负责不外传")
+
+    # 元数据 / 聚合类出口逐个扫：
+    SCAN_TARGETS = ["zx_sync_log", "zx_diagnosis_log", "zx_session_status",
+                    "zx_subjects", "zx_knowledge_points", "zx_review_queue"]
+    for t in SCAN_TARGETS:
+        payload = await call(t, {})
+        blob = text_of(payload)
+        leak = [c for c in CANARIES if c in blob]
+        log(f"出口 PII 扫描：{t}", not leak,
+            f"泄漏：{leak}" if leak else "未发现 PII 原文")
+
     # ---- 11. 确认 MCP 内零模型调用 ----
     src = (ROOT / "server.py").read_text(encoding="utf-8")
     banned = ["openai", "anthropic", "claude", "gpt", "dashscope", "zhipu",
