@@ -556,6 +556,43 @@ def main() -> int:
           "13812345678" not in json.dumps(rp, ensure_ascii=False)
           and rp["stem"].split("话")[1] == rp["list"][0], "")
 
+    # ---------------------------------------------------------------- K4
+    section("K4. 出题答案验证门禁（包六）")
+    from core.practice_gates import (check_equation,             # noqa: E402
+                                     eval_expr, gate_export_items,
+                                     verify_answer)
+
+    check("白名单求值器：纯算术可算",
+          eval_expr("2^2 - 5*2 + 6") == 0.0, "")
+    check("白名单求值器：字母/下划线/属性注入 → 拒判（None）",
+          eval_expr("__import__('os')") is None
+          and eval_expr("(1).real") is None, "")
+    eq = check_equation("2^2 - 5*2 + 6 = 0")
+    check("回代等式成立 → numeric/match",
+          eq["verdict"] == "match" and eq["strength"] == "numeric", eq["detail"])
+    eq = check_equation("x^2 = 4")
+    check("等式含字母 → undecidable（不猜）",
+          eq["strength"] == "undecidable", eq["detail"])
+    v = verify_answer("k < 25/4", "k < 25/4")
+    check("与标准答案逐字一致 → exact",
+          v["strength"] == "exact" and v["verdict"] == "match", v["detail"])
+    v = verify_answer("9x^2-4", "9x^2 - 4", self_check="")
+    check("写法不同但纯算术可比时正确分层", v["strength"] in ("weak", "exact"), v["detail"])
+    v = verify_answer("见解析", standard_answer="略", self_check="")
+    check("无标准答案/成段文字 → 如实 weak/undecidable，不冒充 strong",
+          v["strength"] in ("weak", "undecidable"), v["detail"])
+    errs = gate_export_items([
+        {"gen_id": "ok1", "verified": True, "strength": "exact"},
+        {"gen_id": "ok2", "verified": True,
+         "self_check": "2^2 - 5*2 + 6 = 0"},
+        {"gen_id": "bad1", "verified": True},
+        {"gen_id": "bad2", "verified": True, "self_check": "1 + 1 = 3"},
+        {"gen_id": "fine", "verified": False},
+    ])
+    bad_ids = {e.split(":")[0] for e in errs}
+    check("诚实门禁：weak 不许冒充 strong（bad1/bad2 拒，ok1/ok2/fine 过）",
+          bad_ids == {"bad1", "bad2"}, str(errs)[:150])
+
     # ---------------------------------------------------------------- 汇总
     passed = sum(1 for r in RESULTS if r["ok"])
     failed = [r for r in RESULTS if not r["ok"]]

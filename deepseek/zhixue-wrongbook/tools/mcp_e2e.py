@@ -307,7 +307,46 @@ async def main() -> int:
         and r.get("history_recorded") == "correct",
         f"verdict={r.get('comparison', {}).get('verdict')}")
 
-    # ---- 9. zx_export_paper ----
+    # ---- 9. zx_export_paper（包六：答案层验证门禁） ------------------------
+    # 先做答案层验证拿 strength，再出卷 —— weak 不许冒充 strong。
+    r = json.loads(text_of(await call("zx_practice_verify", {
+        "generated_answer": "k < 25/4", "standard_answer": "k < 25/4"})))
+    log("zx_practice_verify 逐字一致 → exact（强验证）",
+        r.get("strength") == "exact" and r.get("ok") is True, r.get("detail"))
+
+    r = json.loads(text_of(await call("zx_practice_verify", {
+        "generated_answer": "4 - 10 + 6", "self_check": "2^2 - 5*2 + 6 = 0"})))
+    log("回代等式成立 → numeric（强验证）",
+        r.get("strength") == "numeric" and r.get("verdict") == "match",
+        r.get("detail"))
+
+    r = json.loads(text_of(await call("zx_practice_verify", {
+        "generated_answer": "x = 2", "self_check": "2^2 - 5*2 + 7 = 0"})))
+    log("回代不成立 → mismatch（答案大概率错了）",
+        r.get("verdict") == "mismatch" and r.get("ok") is False
+        and r.get("error_code") == "practice_gate", r.get("detail"))
+
+    r = json.loads(text_of(await call("zx_practice_verify", {
+        "generated_answer": "见解析过程", "standard_answer": "同上，化简即可"})))
+    log("成段文字 → undecidable（不猜，如实记 weak）",
+        r.get("strength") in ("weak", "undecidable") and r.get("ok") is True,
+        r.get("detail"))
+
+    # 没做过答案层验证就声称 verified=True → 整卷拒绝
+    unverified_items = json.dumps([{
+        "gen_id": "p_bad", "subject": "数学", "qtype": "解答题",
+        "knowledge_points": ["数学/一元二次方程/公式法与判别式"],
+        "kp": ["数学/一元二次方程/公式法与判别式"], "difficulty": 0.6,
+        "stem_html": "<p>未验证的题</p>", "answer": "k < 25/4",
+        "verified": True, "attempts": 1,
+    }], ensure_ascii=False)
+    r = json.loads(text_of(await call("zx_export_paper", {
+        "items": unverified_items, "title": "不应生成的卷子"})))
+    log("zx_export_paper 诚实门禁：没强验证却称 verified → 整卷拒绝",
+        r.get("ok") is False and r.get("error_code") == "practice_gate"
+        and any("p_bad" in e for e in r.get("errors", [])),
+        str(r.get("errors"))[:100])
+
     items = json.dumps([{
         "gen_id": "p_001", "subject": "数学", "qtype": "解答题",
         "knowledge_points": ["数学/一元二次方程/公式法与判别式"],
@@ -316,6 +355,7 @@ async def main() -> int:
         "stem_html": "<p>已知方程 x^2 - 5x + k = 0 有两个不相等的实数根，求 k 的取值范围。</p>",
         "answer": "k < 25/4", "analysis": "由 Δ = 25 - 4k > 0 得 k < 25/4。",
         "verified": True, "attempts": 1, "source_topic": fp[:12],
+        "strength": "exact",
         "verification": [{"name": "题型一致", "kind": "hard", "passed": True, "value": "解答题"},
                          {"name": "知识点 Jaccard", "kind": "hard", "passed": True, "value": 1.0}],
     }], ensure_ascii=False)
@@ -390,6 +430,7 @@ async def main() -> int:
         "zx_list_exams", "zx_sync", "zx_import_export_file",
         "get_questions", "zx_knowledge_points",
         "submit_analysis", "submit_solution", "check_practice",
+        "zx_practice_verify",
         "zx_subjects", "zx_profile", "zx_diagnosis", "zx_diagnosis_log",
         "zx_review_queue", "zx_export_paper", "zx_export_wrongbook",
         "zx_purge", "zx_sync_log",

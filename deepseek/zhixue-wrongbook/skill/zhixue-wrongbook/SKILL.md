@@ -28,6 +28,7 @@ agent_created: true
 | `zx_knowledge_points` | 标知识点前**先查词表**；被「不在受控词表内」拒绝时用它查正确写法 |
 | `submit_analysis` | 你分析完，提交结论（会被校验） |
 | `check_practice` | 你出的题先过确定性校验 |
+| `zx_practice_verify` | 出题的**答案层**验证（包六）：回代等式 / 与标准答案比对，返回 strength。**练习卷想标 verified=true 必须拿到 exact/numeric**，否则整卷被拒（weak 不许冒充 strong） |
 | `submit_solution` | 你自己解一遍出的题，与标准答案比对 |
 | `zx_subjects` | **生成个性化诊断前必须先调**：列出可诊断科目（含题数）给用户选 |
 | `zx_diagnosis` | **个性化诊断的唯一入口**（硬闸门：科目 + 试卷范围，两问都要问过） |
@@ -248,8 +249,11 @@ agent_created: true
 5. 每题都要 `check_practice` 过一遍
    - 硬约束失败 → 改题重来（最多 3 次，仍失败就标记「需人工确认」，
      **绝对不要静默输出**）
-6. 自己解一遍，用 `submit_solution` 与标准答案比对
-7. `zx_export_paper` 导出
+6. 每题再过 `zx_practice_verify` 拿**答案层**验证强度（exact/numeric 算强；
+   拿不到强验证就构造 self_check 回代等式，或如实 `verified=false`）
+   —— `zx_export_paper` 会整卷拒绝「声称 verified 却没有强验证」的条目
+7. 自己解一遍，用 `submit_solution` 与标准答案比对
+8. `zx_export_paper` 导出
 
 ### 场景 4：用户做完练习要批改
 

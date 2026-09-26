@@ -47,6 +47,8 @@ from core.errors import ZxError, error_payload as _error_payload
 from core.export import (SOURCE_LABEL, try_pdf, write_json_report,
                          write_paper, wrongbook_markdown, wrongbook_xlsx)
 from core.models import Analysis, HistoryEntry, PracticeRef
+from core import practice_gates as gates
+from core.errors import CODE_PRACTICE_GATE
 from core.profile import build_profile, review_queue
 from core.store import Store
 from core.scope import (ask_user_scope_prompt, normalize_paper_types,
@@ -917,6 +919,30 @@ def check_practice(fingerprint: str, candidate: str | dict) -> str:
         store.close()
 
 
+@mcp.tool(description="生成题答案层的强度化验证（包六）：structural 门禁之外的"
+                      "「答案到底对不对」。三种验证途径按优先级自动选择："
+                      "① self_check 回代等式（把答案代入生成题构造纯算术等式，"
+                      "如 x=2 时 '4-10+6=0'）；② 与 standard_answer 逐字比对"
+                      "（exact）；③ 纯算术式数值比对（numeric）。"
+                      "返回 strength ∈ {exact, numeric, weak, undecidable} —— "
+                      "只有前两档算强验证，练习卷才允许标 verified=true；"
+                      "undecidable 是诚实的「无法判定」，不是失败。")
+@_guard
+def zx_practice_verify(generated_answer: str, standard_answer: str = "",
+                       self_check: str = "") -> str:
+    res = gates.verify_answer(generated_answer, standard_answer or "",
+                              self_check or "")
+    out = {"ok": res["verdict"] != "mismatch", "verdict": res["verdict"],
+           "strength": res["strength"], "detail": res["detail"],
+           "note": ("strength 只有 exact/numeric 两档算强验证；"
+                    "zx_export_paper 会对声称 verified=True 却拿不出强验证的"
+                    "条目整卷拒绝（weak 不许冒充 strong）。")}
+    if res["verdict"] == "mismatch":
+        out["error_code"] = CODE_PRACTICE_GATE
+        out["suggested_action"] = ["检查生成题的答案或 self_check 等式，改题重来"]
+    return _json(out)
+
+
 # ===========================================================================
 # 科目 / 个性化诊断（强制确认科目）
 # ===========================================================================
@@ -1206,6 +1232,20 @@ def zx_export_paper(items: str | list[dict], title: str = "错题同类练习卷
         return _json({"ok": False, "error": "items 必须是非空数组"})
     for it in data:
         it.setdefault("kp", it.get("knowledge_points", []))
+    # 包六（2026-09-26）：诚实门禁 —— weak 不许冒充 strong。
+    # 声称 verified=True 的条目必须带答案层强验证（strength=exact/numeric，
+    # 由 zx_practice_verify 产出）或能当场回代成立的 self_check；
+    # 只有结构门禁通过、答案层没验证的，整卷拒绝，不静默放行。
+    gate_errors = gates.gate_export_items(data)
+    if gate_errors:
+        return _json({"ok": False, "error_code": CODE_PRACTICE_GATE,
+                      "error": "练习卷未通过答案验证门禁（weak 不许冒充 strong）",
+                      "errors": gate_errors,
+                      "suggested_action": [
+                          "对每个 gen_id 调 zx_practice_verify 做答案层验证",
+                          "或给条目补 self_check 回代等式",
+                          "或把没验证过的条目 verified 改为 false（卷面会标"
+                          "「校验未通过，需人工确认」）"]})
     try:
         path = write_paper(data, out_path or None, title=title)
     except Exception as exc:
