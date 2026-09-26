@@ -37,3 +37,9 @@ requests>=2.34,<3
 # 2026-09-25 已装进项目 venv（`pip install pillow`）。没装的话也可以借用
 # 系统 Python（本机 3.11 自带 PIL）跑图片处理脚本。
 # pillow>=11
+
+# --- 通道 C-2：CDP 守护浏览器「借页面自身的请求」采集（包一，2026-09-26） ---
+# 用途：不起逆向登录协议，MCP 拉起自有 Chrome（专用 profile），用户在浏览器里
+# 登录一次，采集时 CDP 捕获页面自己发出的 getErrorbookList 等响应 ——
+# 签名头由页面自己带，凭据一步不离开浏览器。websocket-client 是纯 Python 小依赖。
+websocket-client>=1.8,<2

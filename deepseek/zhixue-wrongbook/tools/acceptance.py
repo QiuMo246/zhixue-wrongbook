@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import sys
 import tempfile
@@ -592,6 +593,54 @@ def main() -> int:
     bad_ids = {e.split(":")[0] for e in errs}
     check("诚实门禁：weak 不许冒充 strong（bad1/bad2 拒，ok1/ok2/fine 过）",
           bad_ids == {"bad1", "bad2"}, str(errs)[:150])
+
+    # ---------------------------------------------------------------- K5
+    section("K5. CDP 借请求采集（包一，离线部分：状态机 + 字段映射 + 入库管线）")
+    os.environ.setdefault("ZX_BROWSER_PROFILE",
+                          str(Path(tmpdir) / ".browser-cdp"))
+    from adapters import browser_collect as bc          # noqa: E402
+
+    check("URL 匹配：子串命中",
+          bc.matches_pattern("https://www.zhixue.com/zhixuebao/...getErrorbookList?x=1",
+                             "getErrorbookList")
+          and not bc.matches_pattern("https://www.zhixue.com/login", "getErrorbookList"),
+          "")
+
+    # 守护进程所有权规则：marker 里 pid 已死 → 陈旧标记，自动清理
+    bc.PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    bc.MARKER.write_text(json.dumps({"pid": 2**28, "port": 1,
+                                     "started_at": "2020-01-01"}), encoding="utf-8")
+    st = bc.daemon_status()
+    check("marker 里 pid 已死 → 判定陈旧并清理，不猜",
+          st["status"] == "stale_marker" and not bc.MARKER.exists(), str(st))
+    check("无 marker → off（不是 running 的猜测值）",
+          bc.daemon_status()["status"] == "off", "")
+
+    # 捕获 JSON → 库自家字段映射 → 现有入库管线（与通道 B 同一条路）
+    raw_topic = {
+        "analysisHtml": "<p>由判别式得</p>", "answerHtml": "<p>m &lt; 9/4</p>",
+        "answerType": "standard", "beCorrect": False, "classScoreRate": 0.65,
+        "contentHtml": "<p>x^2 - 3x + m = 0 有两个不相等的实数根</p>",
+        "difficultyValue": 2, "disTitleNumber": "9",
+        "paperId": "P1234567890", "paperName": "数学",
+        "score": 0, "standardAnswer": "m < 9/4", "standardScore": 4,
+        "topicAnalysisImgUrl": "", "topicId": "T9876543210",
+        "topicImgUrl": "", "topicSourcePaperName": "20260918八年级周测",
+    }
+    topics = bc.json_to_topics([raw_topic])
+    check("捕获 JSON 走库自家 ErrorBookTopic 映射（字段名与库 get_errorbook 一致）",
+          len(topics) == 1 and topics[0].difficulty == 2
+          and topics[0].paper_id == "P1234567890", "")
+    store2 = Store(db, imgs)
+    report = bc.sync_captured(store2, {"raw_topics": [raw_topic]},
+                              images_dir=imgs, download=False)
+    check("sync_captured 复用现有管线入库（source=api）",
+          report["added"] == 1 and report["failed"] == 0, str(report)[:120])
+    got = store2.query(subject="数学")
+    check("入库结果可被现有查询读到（考试名取 topicSourcePaperName）",
+          len(got) == 1 and got[0].exam.name == "20260918八年级周测"
+          and got[0].source == "api", "")
+    store2.close()
 
     # ---------------------------------------------------------------- 汇总
     passed = sum(1 for r in RESULTS if r["ok"])

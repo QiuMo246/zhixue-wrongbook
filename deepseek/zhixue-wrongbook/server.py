@@ -37,6 +37,7 @@ except ImportError:  # pragma: no cover - mcp < 2
     from mcp.server.fastmcp import FastMCP as _Server  # type: ignore
 
 from adapters import auto_login
+from adapters import browser_collect
 from adapters import session as session_store
 from adapters import zhixue_web
 from adapters import zhixuewang as zxw
@@ -663,6 +664,51 @@ def zx_sync(subjects: str | list[str] = "", max_exams: int = 5,
         report_counts = store.counts()
         store.close()
     return _json({"ok": True, "report": report, "library": report_counts})
+
+
+# ===========================================================================
+# 通道 C-2：CDP 守护浏览器「借页面自身的请求」采集（包一）
+# ===========================================================================
+@mcp.tool(description="启动 CDP 守护浏览器（通道 C-2）。弹出**专用** Chrome 窗口，"
+                      "让用户在里面登录智学网一次，登录态留在专用 profile 里，"
+                      "凭据不经手 MCP。启动后调 zx_sync_browser 采集。"
+                      "⚠️ 真机联调未完成（not_verified）：接口结构以真机核验为准。")
+@_guard
+def zx_browser_start() -> str:
+    return _json(browser_collect.start_daemon())
+
+
+@mcp.tool(description="停止 CDP 守护浏览器并清理 marker（不删 profile —— "
+                      "登录态还在，下次不用重新登录）。彻底注销请删 "
+                      "data/.browser-cdp/ 目录。")
+@_guard
+def zx_browser_stop() -> str:
+    return _json(browser_collect.stop_daemon())
+
+
+@mcp.tool(description="CDP 采集：捕获错题本页面自己发出的 getErrorbookList 响应，"
+                      "复用通道 B 的字段映射与入库管线（source=api）。"
+                      "前置条件：zx_browser_start 已启动且用户已登录。"
+                      "签名头由页面自己带，凭据不离开浏览器。"
+                      "⚠️ not_verified：真机联调未完成，结构漂移会如实报错。")
+@_guard
+def zx_sync_browser(download_images: bool = False) -> str:
+    cap = browser_collect.capture_errorbook()
+    if not cap.get("raw_topics"):
+        return _json({"ok": False,
+                      "error": cap.get("login_hint") or "没抓到错题本数据。",
+                      "captured": cap.get("captured", 0),
+                      "login_hint": cap.get("login_hint")})
+    store = _store()
+    try:
+        report = browser_collect.sync_captured(
+            store, cap, images_dir=_abs_images(), download=download_images)
+        library = store.counts()
+    finally:
+        store.close()
+    return _json({"ok": True, "captured": cap["captured"],
+                  "not_verified": cap["not_verified"],
+                  "report": report, "library": library})
 
 
 @mcp.tool(description="导入官方导出的错题文件（通道 A，完全合规，不碰账号）。"

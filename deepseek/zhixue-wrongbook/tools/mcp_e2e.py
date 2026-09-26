@@ -428,6 +428,7 @@ async def main() -> int:
         "zx_session_set", "zx_session_status", "zx_session_clear",
         "zx_account_set", "zx_account_clear",
         "zx_list_exams", "zx_sync", "zx_import_export_file",
+        "zx_browser_start", "zx_browser_stop", "zx_sync_browser",
         "get_questions", "zx_knowledge_points",
         "submit_analysis", "submit_solution", "check_practice",
         "zx_practice_verify",
