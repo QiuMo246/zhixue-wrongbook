@@ -90,12 +90,14 @@ def locate_project(root: Path) -> Path:
     """
     if (root / "requirements.txt").exists() and (root / "server.py").exists():
         return root
-    if root.name == "zhixue-wrongbook":
-        return root
     for cand in sorted(root.rglob("install.py")):
         d = cand.parent
         if (d / "requirements.txt").exists() and (d / "server.py").exists():
             return d
+    # 顶层目录恰好叫 zhixue-wrongbook（如 --from-zip 的默认 target）：
+    # 上面实在找不到更深的项目时才按顶层算
+    if root.name == "zhixue-wrongbook":
+        return root
     raise SystemExit(
         f"在 {root} 下没找到项目（server.py + requirements.txt）。"
         "把这段输出发给你的 AI 排查。")
@@ -119,7 +121,7 @@ def fetch_from_zip(target: Path, url: str = "") -> Path:
         try:
             with urllib.request.urlopen(src, timeout=120) as r, open(tmp, "wb") as f:
                 f.write(r.read())
-            if tmp.read(2) == b"PK":
+            if tmp.open("rb").read(2) == b"PK":
                 break
             last_err = OSError("返回内容不是 zip（多半被反爬挡了）")
             step(f"下载失败（{last_err}），换下一个源…")
@@ -139,10 +141,13 @@ def fetch_from_zip(target: Path, url: str = "") -> Path:
     # 按解压出来的实际目录名剥掉这层挪到 target
     extracted = target.parent / next(iter(tops)) if len(tops) == 1 else None
     if extracted and extracted.exists():
-        if target.exists():
+        if extracted.resolve() == target.resolve():
+            pass  # zip 顶层目录名恰好与 target 同名，无需搬运
+        elif target.exists():
             raise SystemExit(
                 f"{target} 已存在 —— 换个 --target 或先删掉再试。")
-        extracted.rename(target)
+        else:
+            extracted.rename(target)
     elif not target.exists():
         raise SystemExit("解压后没找到仓库目录，请把上面的输出发给 AI 排查。")
     return target
