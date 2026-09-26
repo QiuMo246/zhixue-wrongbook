@@ -32,7 +32,9 @@ from pathlib import Path
 
 REQUIRED_IMPORTS = ["mcp", "pydantic", "yaml", "keyring", "requests", "PIL"]
 
-REPO = "QiuMo246/zhixue-wrongbook"
+REPO = "QiuMo246/zhixue-wrongbook"          # GitHub 后备源
+GITEE_REPO = "qiu_moRs/zhixue-wrongbook"    # 默认源：国内免代理直连
+GITEE_TAG = "install"                       # 装安装包 zip 的 Gitee Release 标签
 REPO_BRANCH = "main"
 
 # 全局：venv 不可用时降级为「无 venv 模式」，PY 指向当前解释器
@@ -101,20 +103,42 @@ def locate_project(root: Path) -> Path:
 
 def fetch_from_zip(target: Path, url: str = "") -> Path:
     """下载仓库 zip 并解开到 target（剥掉顶层目录）。纯标准库，不需要 git。"""
-    url = url or f"https://codeload.github.com/{REPO}/zip/refs/heads/{REPO_BRANCH}"
-    step(f"下载仓库 zip：{url}")
+    # 学生环境没有代理，按国内可达性排序；逐个试，zip 魔数不对（如反爬
+    # 返回 HTML 页面）也当失败继续换源。
+    sources = [url] if url else [
+        f"https://gitee.com/{GITEE_REPO}/releases/download/"
+        f"{GITEE_TAG}/zhixue-wrongbook-{REPO_BRANCH}.zip",
+        f"https://gitee.com/{GITEE_REPO}/repository/archive/{REPO_BRANCH}.zip",
+        f"https://codeload.github.com/{REPO}/zip/refs/heads/{REPO_BRANCH}",
+    ]
     tmp = target.parent / "_repo.zip"
     target.parent.mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(url, timeout=120) as r, open(tmp, "wb") as f:
-        f.write(r.read())
+    last_err: Exception | None = None
+    for src in sources:
+        step(f"下载仓库 zip：{src}")
+        try:
+            with urllib.request.urlopen(src, timeout=120) as r, open(tmp, "wb") as f:
+                f.write(r.read())
+            if tmp.read(2) == b"PK":
+                break
+            last_err = OSError("返回内容不是 zip（多半被反爬挡了）")
+            step(f"下载失败（{last_err}），换下一个源…")
+        except OSError as e:
+            last_err = e
+            step(f"下载失败（{e}），换下一个源…")
+    else:
+        raise SystemExit(
+            f"所有下载源都失败了（最后一个错误：{last_err}）。"
+            "手动下载仓库 zip 后用 --from-zip <zip路径> 安装。")
     step(f"解压到 {target}")
     with zipfile.ZipFile(tmp) as z:
+        tops = {n.split("/", 1)[0] for n in z.namelist() if n.strip("/")}
         z.extractall(target.parent)
     tmp.unlink()
-    # zip 顶层目录是 <仓库名>-<分支>/（不带用户名），剥掉这层挪到 target
-    repo_name = REPO.split("/")[-1]
-    extracted = target.parent / f"{repo_name}-{REPO_BRANCH}"
-    if extracted.exists():
+    # zip 顶层是一个单目录，但名字随打包方式而变（Gitee/GitHub 命名规则不同），
+    # 按解压出来的实际目录名剥掉这层挪到 target
+    extracted = target.parent / next(iter(tops)) if len(tops) == 1 else None
+    if extracted and extracted.exists():
         if target.exists():
             raise SystemExit(
                 f"{target} 已存在 —— 换个 --target 或先删掉再试。")
