@@ -22,7 +22,12 @@ import uuid
 
 import requests
 
+from datetime import datetime, timezone
+
+import requests
+
 from adapters.zhixuewang import parse_cookie_string
+from core.fingerprint import check_response
 
 BASE_URL = "https://www.zhixue.com"
 
@@ -55,7 +60,12 @@ class ZhixueTokenError(ZhixueWebError):
 class ZhixueWebClient:
     """最小可用的裸接口客户端。自己管 XToken，不依赖 zhixuewang 的登录。"""
 
-    def __init__(self, raw_cookie: str, timeout: int = 20):
+    def __init__(self, raw_cookie: str, timeout: int = 20, fp_store=None):
+        """fp_store：core.fingerprint.FingerprintStore（可选）。
+
+        传了就启用结构指纹（包二）：每个 _get 响应先过基线比对，
+        漂移即抛 ZxError(fingerprint_drift)。探针/诊断类调用不传，
+        保持历史行为。"""
         self.session = requests.Session()
         cookies = parse_cookie_string(raw_cookie)
         self.session.cookies.update(cookies)
@@ -64,6 +74,7 @@ class ZhixueWebClient:
         self.timeout = timeout
         self._token: str | None = None
         self._token_at: float = 0.0
+        self.fp_store = fp_store
 
     # -- 基础设施 ---------------------------------------------------------
     def _auth_headers(self) -> dict:
@@ -87,9 +98,13 @@ class ZhixueWebClient:
         if not r.ok:
             raise ZhixueWebError(f"{key} HTTP {r.status_code}: {r.text[:300]}")
         try:
-            return r.json()
+            data = r.json()
         except ValueError as exc:
             raise ZhixueWebError(f"{key} 返回的不是 JSON：{r.text[:200]}") from exc
+        if self.fp_store is not None:
+            check_response(self.fp_store, f"web.{key}", data,
+                           datetime.now(timezone.utc).isoformat())
+        return data
 
     # -- 验证用 -----------------------------------------------------------
     def whoami(self) -> dict:

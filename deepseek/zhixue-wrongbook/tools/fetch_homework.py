@@ -50,12 +50,30 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sqlite3
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+
+from core.fingerprint import FingerprintStore, check_response  # noqa: E402
+
+
+def _fp_store() -> FingerprintStore:
+    """作业链路的结构指纹库（包二）。
+
+    三个接口都是自己逆出来的，平台改版时最可能先在这里断 ——
+    指纹基线挂在主库（和题目数据同生共死，purge 时一起删）。
+    ZX_FINGERPRINT_OFF=1 时 check_response 自动只登记不比对。
+    """
+    db_path = os.environ.get("ZX_DB_PATH", str(ROOT / "data" / "wrongbook.db"))
+    conn = sqlite3.connect(db_path)
+    return FingerprintStore(conn)
+
 
 BASE = "https://www.zhixue.com"
 LIST_URL = "/zhixuebao/report/exam/getUserExamList"
@@ -94,7 +112,8 @@ def _client():
                         "endSchoolYear": y.get("endTime", "")}
 
 
-def fetch_list(s, headers, year: dict, max_pages: int = 40) -> list[dict]:
+def fetch_list(s, headers, year: dict, max_pages: int = 40,
+               fp: FingerprintStore | None = None) -> list[dict]:
     """① 作业列表（自动翻页）。"""
     out, page = [], 1
     while page <= max_pages:
@@ -103,6 +122,9 @@ def fetch_list(s, headers, year: dict, max_pages: int = 40) -> list[dict]:
                           "pageSize": 50, **year},
                   headers=headers, timeout=25)
         d = r.json()
+        if fp is not None:
+            check_response(fp, "homework.getUserExamList", d,
+                           datetime.now(timezone.utc).isoformat())
         if d.get("errorCode") != 0:
             print(f"  取列表失败：errorCode={d.get('errorCode')} "
                   f"{d.get('errorInfo')}")
@@ -116,19 +138,27 @@ def fetch_list(s, headers, year: dict, max_pages: int = 40) -> list[dict]:
     return out
 
 
-def fetch_subjects(s, headers, year, exam_id: str) -> list[dict]:
+def fetch_subjects(s, headers, year, exam_id: str,
+                   fp: FingerprintStore | None = None) -> list[dict]:
     """② 某份作业的学科列表。"""
     d = s.get(BASE + SUBJECT_URL,
               params={"examId": exam_id, "reportType": "homework", **year},
               headers=headers, timeout=25).json()
+    if fp is not None:
+        check_response(fp, "homework.getExamData", d,
+                       datetime.now(timezone.utc).isoformat())
     return ((d.get("result") or {}).get("subjects")) or []
 
 
-def fetch_topics(s, headers, exam_id: str, paper_id: str) -> list[dict]:
+def fetch_topics(s, headers, exam_id: str, paper_id: str,
+                 fp: FingerprintStore | None = None) -> list[dict]:
     """③ 某学科在本次作业里的题目（含答案与解析）。"""
     d = s.get(BASE + TOPIC_URL,
               params={"examId": exam_id, "paperId": paper_id},
               headers=headers, timeout=25).json()
+    if fp is not None:
+        check_response(fp, "homework.getLostTopicAndAnalysis", d,
+                       datetime.now(timezone.utc).isoformat())
     res = d.get("result") or {}
     return ((res.get("wrongTopicAnalysis") or {}).get("topicList")) or []
 
@@ -143,10 +173,11 @@ def main() -> int:
     args = ap.parse_args()
 
     s, headers, year = _client()
+    fp = _fp_store()          # 结构指纹（包二）：漂移即拦截，不采错数据
     print(f"学年参数: {year}")
     print()
 
-    items = fetch_list(s, headers, year)
+    items = fetch_list(s, headers, year, fp=fp)
     print(f"① 作业列表：{len(items)} 份")
     if not items:
         print("  没拿到任何作业。可能 Cookie 失效或该校未启用作业报告。")
@@ -170,7 +201,7 @@ def main() -> int:
         day = time.strftime("%Y-%m-%d",
                             time.localtime(it["examCreateDateTime"] / 1000))
         try:
-            subs = fetch_subjects(s, headers, year, eid)
+            subs = fetch_subjects(s, headers, year, eid, fp=fp)
         except Exception as exc:
             print(f"  {n:2d}. {it.get('examName')} 取学科失败：{exc}")
             continue
@@ -179,7 +210,7 @@ def main() -> int:
             if args.subject and sb.get("subjectName") != args.subject:
                 continue
             try:
-                tl = fetch_topics(s, headers, eid, sb.get("topicSetId"))
+                tl = fetch_topics(s, headers, eid, sb.get("topicSetId"), fp=fp)
             except Exception as exc:
                 tl = []
                 print(f"       {sb.get('subjectName')} 取题失败：{exc}")

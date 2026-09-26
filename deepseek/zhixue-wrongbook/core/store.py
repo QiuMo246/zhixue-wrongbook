@@ -27,6 +27,7 @@ from pathlib import Path
 
 from .constants import (PAPER_TYPE_ALL, PAPER_TYPE_OTHER, PAPER_TYPES,
                         PARSE_CONFIDENCE_MIN)
+from .fingerprint import FingerprintStore
 from .models import (Analysis, AnswerPart, Exam, HistoryEntry, PracticeRef,
                      QuestionPart, Score, WrongQuestion)
 
@@ -197,6 +198,9 @@ class Store:
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
         self._migrate()
+        # 接口结构指纹（包二，2026-09-26）：表由 FingerprintStore 自建，
+        # 挂在主库上 —— 指纹和题目数据同生共死，purge 时一起删。
+        self.fingerprints = FingerprintStore(self.conn)
         self.conn.commit()
         # id 撞车后改名的记录。正常情况下应该永远是空的；
         # 一旦非空说明 make_id 没能保证唯一，调用方（sync）必须把它报出来。

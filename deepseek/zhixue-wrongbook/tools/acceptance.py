@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import sys
 import tempfile
 from datetime import date, timedelta
@@ -493,6 +494,41 @@ def main() -> int:
         tmpdir.rmdir()
     except Exception:
         pass
+
+    # ---------------------------------------------------------------- K2
+    section("K2. 接口结构指纹（包二）")
+    from core.errors import CODE_FINGERPRINT_DRIFT, ZxError   # noqa: E402
+    from core.fingerprint import (FingerprintStore, diff,     # noqa: E402
+                                  check_response, shape_signature)
+
+    sig1 = shape_signature({"result": {"list": [{"a": 1, "b": "x"}], "n": 3}})
+    sig2 = shape_signature({"result": {"list": [{"a": 999, "b": "完全不同的文本"}],
+                                       "n": 777}})
+    check("指纹只看结构不看值：同结构不同值 → 签名相同", sig1 == sig2,
+          f"{sig1[:3]}…")
+    sig3 = shape_signature({"result": {"list": [{"a": 1, "b2": "x"}], "n": 3}})
+    d = diff(sig1, sig3)
+    check("字段改名 / 消失 → 签名变化", sig1 != sig3 and d["removed"], str(d)[:120])
+
+    fp_conn = sqlite3.connect(":memory:")
+    fps = FingerprintStore(fp_conn)
+    now = "2026-09-26T00:00:00+00:00"
+    resp = {"errorCode": 0, "result": {"examList": [{"examId": "1"}]}}
+    st = check_response(fps, "homework.getUserExamList", resp, now)
+    check("首次响应登记基线", st["status"] == "baseline_registered", st["status"])
+    st = check_response(fps, "homework.getUserExamList", resp, now)
+    check("同结构再次响应 → 放行", st["status"] == "ok", st["status"])
+    drifted = {"errorCode": 0, "result": {"data": {"examList": [{"examId": "1"}]}}}
+    try:
+        check_response(fps, "homework.getUserExamList", drifted, now)
+        drift_raised = False
+    except ZxError as exc:
+        drift_raised = (exc.code == CODE_FINGERPRINT_DRIFT
+                        and bool(exc.suggested_action))
+    check("结构漂移 → ZxError(fingerprint_drift)，不把可疑数据放行",
+          drift_raised, "")
+    check("基线持久化（可跨连接读取）",
+          fps.baseline("homework.getUserExamList") is not None, "")
 
     # ---------------------------------------------------------------- 汇总
     passed = sum(1 for r in RESULTS if r["ok"])
