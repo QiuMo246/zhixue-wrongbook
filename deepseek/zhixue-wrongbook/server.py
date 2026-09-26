@@ -43,6 +43,7 @@ from adapters import zhixuewang as zxw
 from adapters.parsers import zhixue_export
 from core.config import get_config
 from core.constants import TIME_SCOPES
+from core.errors import ZxError, error_payload as _error_payload
 from core.export import (SOURCE_LABEL, try_pdf, write_json_report,
                          write_paper, wrongbook_markdown, wrongbook_xlsx)
 from core.models import Analysis, HistoryEntry, PracticeRef
@@ -248,6 +249,11 @@ def _guard(fn):
 
     只兜 Exception，不兜 BaseException —— KeyboardInterrupt / SystemExit
     属于该往上走的，不能吞。
+
+    包四（2026-09-26，移植自 qwen 分支）：ZxError 会额外带上
+    `error_code` / `missing` / `suggested_action` 三个兄弟键，
+    宿主照 SKILL.md 的话术表跟用户协商，不用自己从报错字符串里猜。
+    普通异常不带这三个键，返回形状与历史版本完全一致。
     """
     tool_name = fn.__name__
 
@@ -256,6 +262,9 @@ def _guard(fn):
         async def _awrapped(*args, **kwargs):
             try:
                 return await fn(*args, **kwargs)
+            except ZxError as exc:
+                return _json({"ok": False, "tool": tool_name,
+                              "error": exc.message, **_error_payload(exc)})
             except Exception as exc:
                 return _json({"ok": False, "tool": tool_name,
                               "error": f"{type(exc).__name__}: {exc}"})
@@ -265,6 +274,9 @@ def _guard(fn):
     def _wrapped(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
+        except ZxError as exc:
+            return _json({"ok": False, "tool": tool_name,
+                          "error": exc.message, **_error_payload(exc)})
         except Exception as exc:
             return _json({"ok": False, "tool": tool_name,
                           "error": f"{type(exc).__name__}: {exc}"})
@@ -442,7 +454,9 @@ def zx_session_set(cookie: str, verify: bool = True) -> str:
     try:
         saved = session_store.set_cookie(cookie)
     except Exception as exc:
-        return _json({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+        return _json({"ok": False, "error": str(exc) if isinstance(exc, ZxError)
+                      else f"{type(exc).__name__}: {exc}",
+                      **_error_payload(exc)})
 
     out = {"ok": True, "stored": saved}
     if verify:
@@ -518,7 +532,9 @@ def zx_session_status() -> str:
                 st["note"] = "Cookie 已失效，已用本机存档的账号密码自动重新登录。"
                 return _json(st)
             except Exception as exc:
-                st["auto_relogin_error"] = f"{type(exc).__name__}: {exc}"
+                st["auto_relogin_error"] = str(exc) if isinstance(exc, ZxError) \
+                    else f"{type(exc).__name__}: {exc}"
+                st.update(_error_payload(exc))
         st["valid"] = False
         st["error"] = (f"会话已失效：服务端返回 errorCode={probe.get('error_code')}"
                        f"（{probe.get('error_info')}）。")
@@ -565,7 +581,9 @@ def _ensure_cookie() -> str:
         return auto_login.ensure_session()[0]
     except Exception as exc:
         return _json({
-            "ok": False, "error": f"{type(exc).__name__}: {exc}",
+            "ok": False, "error": str(exc) if isinstance(exc, ZxError)
+            else f"{type(exc).__name__}: {exc}",
+            **_error_payload(exc),
             "hint": "运行 .venv/Scripts/python tools/setup_account.py 录入一次"
                     "账号密码，之后 Cookie 失效会自动重登，全程无需手动登录。",
         })
@@ -584,7 +602,9 @@ def zx_account_set(account: str, password: str) -> str:
                       "session": saved,
                       "note": "已登录并保存会话；此后失效会自动重登。"})
     except Exception as exc:
-        return _json({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+        return _json({"ok": False, "error": str(exc) if isinstance(exc, ZxError)
+                      else f"{type(exc).__name__}: {exc}",
+                      **_error_payload(exc)})
 
 
 @mcp.tool(description="清除本机存档的账号密码（不影响已保存的 Cookie）。")
@@ -633,7 +653,9 @@ def zx_sync(subjects: str | list[str] = "", max_exams: int = 5,
                           max_exams=max_exams, exam_ids=exam_list,
                           download=download_images)
     except Exception as exc:
-        return _json({"ok": False, "error": f"{type(exc).__name__}: {exc}",
+        return _json({"ok": False, "error": str(exc) if isinstance(exc, ZxError)
+                      else f"{type(exc).__name__}: {exc}",
+                      **_error_payload(exc),
                       "hint": "先跑 zx_session_status 确认 Cookie 是否有效。"})
     finally:
         report_counts = store.counts()
@@ -654,7 +676,9 @@ def zx_import_export_file(path: str, subject: str, exam_name: str,
             p, subject=subject, exam_name=exam_name,
             exam_date=exam_date or None, grade=grade or None)
     except Exception as exc:
-        return _json({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+        return _json({"ok": False, "error": str(exc) if isinstance(exc, ZxError)
+                      else f"{type(exc).__name__}: {exc}",
+                      **_error_payload(exc)})
     store = _store()
     added = updated = failed = 0
     for q in questions:

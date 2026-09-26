@@ -29,6 +29,7 @@ from pathlib import Path
 import requests
 
 from adapters import session as session_store
+from core.errors import CODE_AUTO_LOGIN_FAILED, ZxError
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -45,8 +46,24 @@ _PWD_FILE = Path(os.environ.get(
     "ZX_CRED_PASSWORD_FILE", str(ROOT / "data" / ".password.bin")))
 
 
-class AutoLoginError(RuntimeError):
-    """账密登录失败（含服务端拒绝原因）。"""
+class AutoLoginError(ZxError):
+    """账密登录失败（含服务端拒绝原因）。
+
+    包四（2026-09-26）：改为继承 ZxError，`_guard` 会自动带出
+    error_code=auto_login_failed 与协商字段；8 个既有 raise 点
+    只传 message，不破坏调用形状。
+    """
+
+    def __init__(self, message: str, *, code: str = CODE_AUTO_LOGIN_FAILED,
+                 missing: list[str] | None = None,
+                 suggested_action: list[str] | None = None):
+        super().__init__(
+            message, code=code, missing=missing,
+            suggested_action=suggested_action or [
+                "跑 tools/setup_account.py 重新录入一次账号密码（密码改过时）",
+                "或改用 zx_session_set 直接粘贴 Cookie（不走账密）",
+                "或改走合规通道 A：zx_import_export_file 解析官方导出文件",
+            ])
 
 
 # ---------------------------------------------------------------------------

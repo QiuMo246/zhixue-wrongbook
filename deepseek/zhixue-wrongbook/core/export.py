@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .errors import CODE_DEPENDENCY_MISSING, ZxError
 from .models import WrongQuestion, html_to_text
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -65,9 +66,13 @@ def wrongbook_xlsx(questions: list[WrongQuestion], path: str | Path) -> str:
     try:
         from openpyxl import Workbook
     except ImportError as exc:
-        raise RuntimeError(
+        raise ZxError(
             "未安装 openpyxl，无法导出 xlsx。执行："
-            ".venv/Scripts/python -m pip install openpyxl") from exc
+            ".venv/Scripts/python -m pip install openpyxl",
+            code=CODE_DEPENDENCY_MISSING,
+            missing=["python 包 openpyxl"],
+            suggested_action=["运行 .venv/Scripts/python -m pip install openpyxl",
+                              "或改用 zx_export_wrongbook(fmt=\"md\")"]) from exc
     wb = Workbook()
     ws = wb.active
     ws.title = "错题本"

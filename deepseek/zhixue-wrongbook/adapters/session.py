@@ -21,6 +21,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from core.errors import CODE_NO_SAFE_STORAGE, ZxError
+
 ROOT = Path(__file__).resolve().parent.parent
 
 # 凭据的「命名空间」。默认就是生产值。
@@ -172,10 +174,14 @@ def set_cookie(cookie: str) -> dict:
         _file_set(cookie)
         return {"ok": True, "backend": backend_name(), "length": len(cookie),
                 "note": "keyring 不可用，已降级为 DPAPI 加密文件；" + "；".join(errors)}
-    raise RuntimeError(
+    raise ZxError(
         "没有可用的安全存储后端（keyring 不可用，且本平台无 DPAPI）。"
         "为避免把 Cookie 写成明文，这里选择直接失败。"
-        "请先安装 keyring 并配置好系统凭据后端。")
+        "请先安装 keyring 并配置好系统凭据后端。",
+        code=CODE_NO_SAFE_STORAGE,
+        missing=["可用的凭据安全存储后端（keyring 或 Windows DPAPI）"],
+        suggested_action=["运行 .venv/Scripts/python -m pip install keyring",
+                          "安装后重试；拒绝明文存储是有意设计，不要绕过"])
 
 
 def get_cookie() -> str | None:
