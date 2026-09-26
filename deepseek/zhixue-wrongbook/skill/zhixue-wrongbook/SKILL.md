@@ -118,6 +118,23 @@ agent_created: true
 - 每次通过的诊断都会写进 `diagnosis_log`（含科目、试卷类型、时间范围、两处确认声明、
   题数、薄弱项）。用户随时可以用 `zx_diagnosis_log` 核对这条规则有没有被绕过。
 
+### 硬规则 0-披露：题面出境必须先征得用户同意（2026-09-26 新增，包三）
+
+两问都答完之后，`zx_diagnosis` 会返回 `disclosure_required=true` 和一份
+`disclosure` 清单（哪些字段要发给 AI 模型、扫描到了哪几类个人信息）。
+**这一步不能跳，也不能替用户答**：
+
+1. 把 `disclosure.egress` 的说明念给用户（题干 / 标准答案 / 学生作答原文
+   会发给你所使用的 AI 模型），有 PII 命中就一并如实说
+2. 等用户明确表态：
+   - **同意** → 带 `disclosure_confirmed=true` 重调（返回的样题已自动
+     对高置信 PII 打码，`redaction` 字段会说明打了什么）
+   - **不同意** → 带 `stats_only=true`，只做不含题面原文的统计诊断
+     （画像聚合不含个人信息，照样能写「哪些知识点薄弱」的结论）
+3. 两种选择都会写进 `diagnosis_log` 的 `disclosure_confirmed` 列，事后可查
+4. ⚠️ 和 `user_confirmed` / `scope_confirmed` 一样：没问过用户就传
+   `disclosure_confirmed=true`，等于在审计日志里留假记录
+
 ## 标准工作流
 
 ### 场景 1：第一次用（2026-09-25 起全程只需登录一次）
@@ -253,12 +270,15 @@ agent_created: true
 2. `zx_diagnosis(subject=X, user_confirmed=true)` → 会因缺范围被拒，
    返回的 `ask_user` 里带着可选范围与各自题数 → **把范围问题问给用户** → 等明确答复
 3. `zx_diagnosis(subject=X, user_confirmed=true, paper_types=[...],
-   time_scope="...", scope_confirmed=true)` → 放行
-4. 拿到数据包后写报告，按返回里的 `how_to_write` 四条要求
-5. 报告**开头写明「本次诊断：X科 · 范围：<scope.label>」**，方便用户一眼核对
-6. `insufficient=true` 的知识点只能写「样本不足」，**不许编掌握度数值**
-7. 用户若追问「你怎么知道我该看数学」，如实回答：是你刚才选的
-8. **落文件（硬规则 0-补，必做）：用 `tools/report_student.py` 生成学生版
+   time_scope="...", scope_confirmed=true)` → 返回 `disclosure_required`，
+   **走「硬规则 0-披露」**（把出境说明念给用户，等他选同意/仅统计）
+4. 同意：带 `disclosure_confirmed=true` 重调 → 拿到数据包（样题已打码）；
+   不同意：带 `stats_only=true` → 只拿统计画像
+5. 拿到数据包后写报告，按返回里的 `how_to_write` 四条要求
+6. 报告**开头写明「本次诊断：X科 · 范围：<scope.label>」**，方便用户一眼核对
+7. `insufficient=true` 的知识点只能写「样本不足」，**不许编掌握度数值**
+8. 用户若追问「你怎么知道我该看数学」，如实回答：是你刚才选的
+9. **落文件（硬规则 0-补，必做）：用 `tools/report_student.py` 生成学生版
    HTML 报告**，命令模板与自检清单见「硬规则 0-补」。聊天里的文字报告
    只是导读，**没有 HTML 文件就不算做完**。只出 `.html`，
    PDF / Word / txt 等格式等用户点名再说。

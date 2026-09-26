@@ -113,7 +113,8 @@ CREATE TABLE IF NOT EXISTS diagnosis_log (
     question_count INTEGER DEFAULT 0,
     analyzed_count INTEGER DEFAULT 0,
     weak_top       TEXT,
-    host           TEXT
+    host           TEXT,
+    disclosure_confirmed INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -233,6 +234,8 @@ class Store:
                 "paper_types": "TEXT NOT NULL DEFAULT ''",
                 "time_scope": "TEXT NOT NULL DEFAULT ''",
                 "scope_confirmed": "INTEGER NOT NULL DEFAULT 0",
+                # 包三（2026-09-26）：题面出境是否获用户确认
+                "disclosure_confirmed": "INTEGER NOT NULL DEFAULT 0",
             }),
         ):
             existing = {r["name"] for r in
@@ -634,23 +637,28 @@ class Store:
                       weak_top: list[str] | None = None, host: str = "",
                       paper_types: list[str] | None = None,
                       time_scope: str = "",
-                      scope_confirmed: bool = False) -> int:
+                      scope_confirmed: bool = False,
+                      disclosure_confirmed: bool = False) -> int:
         """记一条个性化诊断审计。返回自增 id（宿主可回报给用户）。
 
         paper_types / time_scope 记的是**这次诊断实际覆盖的范围**，
         不是用户原话 —— 事后核对时「覆盖了什么」比「说了什么」更有用。
+        disclosure_confirmed（包三，2026-09-26）：题面出境是否获用户同意 ——
+        同 user_confirmed 一样，是宿主的声明不是系统验证，但必须留痕。
         """
         cur = self.conn.execute(
             """INSERT INTO diagnosis_log
                  (created_at, subject, user_confirmed, paper_types, time_scope,
-                  scope_confirmed, question_count, analyzed_count, weak_top, host)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                  scope_confirmed, question_count, analyzed_count, weak_top, host,
+                  disclosure_confirmed)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (datetime.now(timezone.utc).isoformat(), subject,
              1 if user_confirmed else 0,
              "|".join(paper_types or []), time_scope,
              1 if scope_confirmed else 0, int(question_count),
              int(analyzed_count),
-             json.dumps(list(weak_top or []), ensure_ascii=False), host))
+             json.dumps(list(weak_top or []), ensure_ascii=False), host,
+             1 if disclosure_confirmed else 0))
         self.conn.commit()
         return int(cur.lastrowid)
 
@@ -664,6 +672,7 @@ class Store:
             d["weak_top"] = _json_load(d.get("weak_top"), [])
             d["user_confirmed"] = bool(d.get("user_confirmed"))
             d["scope_confirmed"] = bool(d.get("scope_confirmed"))
+            d["disclosure_confirmed"] = bool(d.get("disclosure_confirmed"))
             d["paper_types"] = [x for x in (d.get("paper_types") or "").split("|")
                                 if x]
             out.append(d)

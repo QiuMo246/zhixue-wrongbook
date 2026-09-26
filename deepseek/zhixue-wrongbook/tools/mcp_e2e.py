@@ -201,21 +201,48 @@ async def main() -> int:
                                       {"subject": "数学", "user_confirmed": True,
                                        "paper_types": ["全部"], "time_scope": "全部",
                                        "scope_confirmed": True})))
-    log("两问都答后放行，并回显本次覆盖范围",
-        r.get("ok") is True and bool(r.get("audit_id"))
-        and r.get("profile", {}).get("subject_filter") == "数学"
-        and bool(r.get("scope", {}).get("label")),
-        f"audit_id={r.get('audit_id')} 范围={r.get('scope', {}).get('label')} "
-        f"样本题={len(r.get('sample_questions', []))} 道")
+    log("两问都答后进**披露门禁**（包三）：先要出境同意，不直接吐题面",
+        r.get("ok") is False and r.get("disclosure_required") is True
+        and "egress" in r.get("disclosure", {})
+        and "ask_user" in r,
+        f"pii_found={r.get('disclosure', {}).get('pii_found')}")
+
+    r2 = json.loads(text_of(await call("zx_diagnosis",
+                                       {"subject": "数学", "user_confirmed": True,
+                                        "paper_types": ["全部"], "time_scope": "全部",
+                                        "scope_confirmed": True,
+                                        "disclosure_confirmed": True})))
+    log("披露确认后放行，返回经 PII 打码的样题与 audit_id",
+        r2.get("ok") is True and bool(r2.get("audit_id"))
+        and r2.get("profile", {}).get("subject_filter") == "数学"
+        and bool(r2.get("scope", {}).get("label"))
+        and isinstance(r2.get("redaction"), dict),
+        f"audit_id={r2.get('audit_id')} 范围={r2.get('scope', {}).get('label')} "
+        f"样本题={len(r2.get('sample_questions', []))} 道 "
+        f"打码={r2.get('redaction', {}).get('applied')}")
+
+    r3 = json.loads(text_of(await call("zx_diagnosis",
+                                       {"subject": "数学", "user_confirmed": True,
+                                        "paper_types": ["全部"], "time_scope": "全部",
+                                        "scope_confirmed": True,
+                                        "stats_only": True})))
+    log("stats_only=true：只做统计诊断，题面原文不出境",
+        r3.get("ok") is True and r3.get("stats_only") is True
+        and r3.get("sample_questions") == []
+        and bool(r3.get("profile", {}).get("kp_mastery")),
+        f"audit_id={r3.get('audit_id')}")
 
     r = json.loads(text_of(await call("zx_diagnosis_log", {})))
-    log("zx_diagnosis_log 留痕含科目 + 范围 + 两处确认声明",
-        r.get("count") == 1 and r["logs"][0]["subject"] == "数学"
+    log("zx_diagnosis_log 留痕含科目 + 范围 + 三处声明（含披露确认）",
+        r.get("count") == 2
+        and r["logs"][0]["subject"] == "数学"
         and r["logs"][0]["user_confirmed"] is True
         and r["logs"][0]["scope_confirmed"] is True
-        and r["logs"][0]["time_scope"] == "全部",
-        f"{r.get('count')} 条："
-        f"{[(x['subject'], x['paper_types'], x['time_scope']) for x in r['logs']]}")
+        and r["logs"][0]["time_scope"] == "全部"
+        and r["logs"][0]["disclosure_confirmed"] is False   # stats_only 那条
+        and r["logs"][1]["disclosure_confirmed"] is True,   # 全量诊断那条
+        f"{r.get('count')} 条（倒序）："
+        f"{[(x['disclosure_confirmed'], x['time_scope']) for x in r['logs']]}")
 
     r = json.loads(text_of(await call("zx_diagnosis",
                                       {"subject": "数学", "user_confirmed": True,

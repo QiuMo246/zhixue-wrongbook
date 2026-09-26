@@ -530,6 +530,32 @@ def main() -> int:
     check("基线持久化（可跨连接读取）",
           fps.baseline("homework.getUserExamList") is not None, "")
 
+    # ---------------------------------------------------------------- K3
+    section("K3. PII 脱敏（包三）")
+    from core.redact import (redact_payload, redact_text,   # noqa: E402
+                             scan, scan_payload)
+
+    sample = "张小明在阳光中学八年级(3)班，家长电话13812345678，" \
+             "邮箱 zx@example.com，学号202609180011"
+    hits = scan(sample)
+    cats = {c for c, _v in hits}
+    check("高置信 PII 全部命中（手机/学校/班级/邮箱/学号）",
+          {"PHONE", "SCHOOL", "CLASS", "EMAIL", "STUID"} <= cats, str(cats))
+    red, n = redact_text(sample)
+    check("打码后原文不再出现", n >= 5 and "13812345678" not in red
+          and "阳光中学" not in red, red[:80])
+    red2, _n = redact_text(sample)
+    check("占位符跨调用稳定（同一 PII → 同一占位符）", red == red2, "")
+    _, n2 = redact_text("已知 x^2 - 3x + m = 0 有两个不相等的实数根")
+    check("纯题干不误伤（命中数为 0）", n2 == 0, "")
+    found = scan_payload({"a": [{"phone": "13900001111"}], "b": "无个人信息"})
+    check("递归扫描 payload 返回类别计数",
+          found == {"PHONE": 1}, str(found))
+    rp = redact_payload({"stem": "电话13812345678", "list": ["13812345678"]})
+    check("payload 打码返回新结构且占位符一致",
+          "13812345678" not in json.dumps(rp, ensure_ascii=False)
+          and rp["stem"].split("话")[1] == rp["list"][0], "")
+
     # ---------------------------------------------------------------- 汇总
     passed = sum(1 for r in RESULTS if r["ok"])
     failed = [r for r in RESULTS if not r["ok"]]

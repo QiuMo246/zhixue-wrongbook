@@ -998,13 +998,18 @@ def zx_profile(subject: str = "", user_confirmed: bool = False,
                       "缺任何一问都会被拒绝并返回 ask_user 话术（含可选范围与题数）—— "
                       "请把那段话问给用户，拿到答复后再重试。"
                       "返回的数据**只覆盖用户选定的范围**，不会偷偷用全量。"
-                      "通过时会写入 diagnosis_log，返回 audit_id 可事后核对。")
+                      "通过科目+范围两问后还有**披露门禁**（包三）：返回题面原文"
+                      "前必须先获用户同意（disclosure_confirmed=true）；"
+                      "用户不同意可带 stats_only=true 只做不含原文的统计诊断。"
+                      "通过时写入 diagnosis_log（含披露确认声明），返回 audit_id 可事后核对。")
 @_guard
 def zx_diagnosis(subject: str = "", user_confirmed: bool = False,
                  paper_types: str | list[str] = "",
                  time_scope: str = "", scope_confirmed: bool = False,
                  since: str = "", until: str = "",
-                 weak_top: int = 10, sample_limit: int = 3) -> str:
+                 weak_top: int = 10, sample_limit: int = 3,
+                 disclosure_confirmed: bool = False,
+                 stats_only: bool = False) -> str:
     store = _store()
     try:
         rejected = _diagnosis_gate(store, subject, user_confirmed,
@@ -1025,6 +1030,68 @@ def zx_diagnosis(subject: str = "", user_confirmed: bool = False,
             paper_types=rng["paper_types"],
             date_from=rng["since"], date_to=rng["until"],
             limit=max(1, int(sample_limit)))]
+
+        # ---- 包三（2026-09-26）：题面出境披露门禁 --------------------------
+        # 样题原文（题干/作答/学校班级等字段）会进入宿主模型上下文 = 出网。
+        # 未获用户确认时不返回 sample_questions；画像聚合（知识点掌握度、
+        # 错因分布）不含个人信息，随时可给 —— 用户拒绝披露也能做纯统计诊断。
+        # PII 模式命中情况作为披露清单的一部分如实列出（识别是尽力而为，
+        # 没命中 ≠ 没有个人信息，所以门禁不依赖命中与否）。
+        from core.redact import (CATEGORY_LABEL, scan_payload,   # noqa: E402
+                                 redact_payload)
+        try:
+            privacy_cfg = CONFIG["privacy"] or {}
+        except (KeyError, TypeError):
+            privacy_cfg = {}
+        names = [str(x) for x in (privacy_cfg.get("student_names") or []) if x]
+        found = scan_payload(samples, names=names)
+        disclosure = {
+            "egress": ("sample_questions 里的题干 / 标准答案 / 学生作答原文"
+                       "将进入你所使用的 AI 模型上下文（服务器在境外/第三方）"),
+            "fields_scanned": ["stem_text", "standard_answer", "analysis",
+                               "student_answer", "exam_name"],
+            "pii_found": {CATEGORY_LABEL.get(k, k): v for k, v in sorted(found.items())},
+            "pii_note": ("模式识别是尽力而为 —— 没命中不代表没有个人信息；"
+                         "确认与否请基于上面那条 egress 说明本身。"),
+        }
+
+        if stats_only:
+            audit_id = store.log_diagnosis(
+                subject=subject, user_confirmed=True,
+                question_count=prof["question_count"],
+                analyzed_count=prof["analyzed_count"],
+                weak_top=[r["kp"] for r in prof["weak_top"]],
+                host=CONFIG["host"]["model_id"],
+                paper_types=rng["paper_types"], time_scope=rng["time_scope"],
+                scope_confirmed=True, disclosure_confirmed=False)
+            return _json({
+                "ok": True, "stats_only": True, "audit_id": audit_id,
+                "subject": subject, "scope": prof["scope"],
+                "profile": prof,
+                "sample_questions": [],
+                "note": ("仅统计模式：画像聚合不含个人信息，已正常返回；"
+                         "题面原文未出境。需要逐题分析时再谈披露确认。"),
+            })
+
+        if not disclosure_confirmed:
+            return _json({
+                "ok": False,
+                "disclosure_required": True,
+                "subject": subject,
+                "scope": prof["scope"],
+                "disclosure": disclosure,
+                "ask_user": (
+                    "出数据前需要用户确认：这次诊断会把选定范围内错题的"
+                    "题干、标准答案、学生作答原文发给你所使用的 AI 模型。"
+                    "把上面 disclosure 里的说明念给用户，等明确同意后带 "
+                    "disclosure_confirmed=true 重调；用户不同意就带 "
+                    "stats_only=true，只做不含原文的统计诊断。不要替用户选。"),
+                "profile": prof,
+                "review_queue": [r for r in review_queue(store)
+                                 if r["subject"] == subject],
+            })
+
+        redacted_samples = redact_payload(samples, names=names)
         audit_id = store.log_diagnosis(
             subject=subject, user_confirmed=True,
             question_count=prof["question_count"],
@@ -1032,14 +1099,20 @@ def zx_diagnosis(subject: str = "", user_confirmed: bool = False,
             weak_top=[r["kp"] for r in prof["weak_top"]],
             host=CONFIG["host"]["model_id"],
             paper_types=rng["paper_types"], time_scope=rng["time_scope"],
-            scope_confirmed=True)
+            scope_confirmed=True, disclosure_confirmed=True)
         return _json({
             "ok": True,
             "audit_id": audit_id,
             "subject": subject,
             "scope": prof["scope"],
             "profile": prof,
-            "sample_questions": samples,
+            "sample_questions": redacted_samples,
+            "redaction": {
+                "applied": bool(found),
+                "pii_found": disclosure["pii_found"],
+                "note": ("已按高置信 PII 模式对出境副本打码（占位符跨调用稳定）；"
+                         "题面逻辑内容原样保留，不影响分析质量。"),
+            },
             "review_queue": [r for r in review_queue(store)
                              if r["subject"] == subject],
             "how_to_write": (
@@ -1054,7 +1127,8 @@ def zx_diagnosis(subject: str = "", user_confirmed: bool = False,
                 "用户选了范围，报告里就得让他看见这个范围。"
             ),
             "disclaimer": ("错题的题干、标准答案、解析、学生作答会进入"
-                           "你所使用的 AI 模型上下文。不想外传请改用本地模型。"),
+                           "你所使用的 AI 模型上下文。不想外传请改用本地模型"
+                           "或 stats_only=true 只做统计。"),
         })
     finally:
         store.close()
