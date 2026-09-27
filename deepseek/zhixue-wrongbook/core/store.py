@@ -203,6 +203,16 @@ class Store:
         # 挂在主库上 —— 指纹和题目数据同生共死，purge 时一起删。
         self.fingerprints = FingerprintStore(self.conn)
         self.conn.commit()
+        # needs_review 过滤能否下推到 SQL（2026-09-27 修，优化.md #4）：
+        # 原来先 LIMIT 再在 Python 里过滤 needs_review，最近 N 题里只有少数
+        # 带标记时会少报 —— 复核队列恰恰最需要不漏。下推依赖 SQLite 的
+        # JSON1 扩展，这里探测一次，不支持的构建回退 Python 过滤（但回退时
+        # 要取消 LIMIT 再补切，否则还是少报）。
+        try:
+            self.conn.execute("SELECT json_extract('{}','$.a')")
+            self._has_json1 = True
+        except sqlite3.OperationalError:
+            self._has_json1 = False
         # id 撞车后改名的记录。正常情况下应该永远是空的；
         # 一旦非空说明 make_id 没能保证唯一，调用方（sync）必须把它报出来。
         self.id_fallbacks: list[dict] = []
@@ -525,16 +535,30 @@ class Store:
             # 低解析置信度的题默认排除（架构文档第 7 节 parse_confidence）
             where.append("q.parse_confidence >= ?")
             args.append(PARSE_CONFIDENCE_MIN)
+        # needs_review 下推 SQL（优化.md #4）：过滤必须发生在 LIMIT **之前**，
+        # 否则「最近 20 题里只有 5 题带标记」时只返回 5 道。
+        sql_needs_review_in_python = False
+        if needs_review is not None:
+            if self._has_json1:
+                where.append(
+                    "COALESCE(json_extract(q.analysis,'$.needs_review'),0) = ?")
+                args.append(1 if needs_review else 0)
+            else:
+                # 没有 JSON1 的 SQLite 构建：回退 Python 过滤，但取消 SQL LIMIT
+                sql_needs_review_in_python = True
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY q.exam_date DESC, q.id ASC"
-        if limit:
-            sql += f" LIMIT {int(limit)}"
+        limit_int = int(limit) if limit else None
+        if limit_int and not sql_needs_review_in_python:
+            sql += f" LIMIT {limit_int}"
         rows = self.conn.execute(sql, args).fetchall()
         out = [row_to_question(r) for r in rows]
-        if needs_review is not None:
+        if needs_review is not None and sql_needs_review_in_python:
             out = [q for q in out
                    if (q.analysis.needs_review if q.analysis else False) == needs_review]
+            if limit_int:
+                out = out[:limit_int]
         return out
 
     def counts(self) -> dict:

@@ -22,6 +22,16 @@ import getpass
 import sys
 from pathlib import Path
 
+# 2026-09-27 修（优化.md 安装链路「GBK 管道崩溃」）：中文 Windows 下管道输出
+# 默认 cp936，✓ 等字符在 AI 助手（管道捕获）场景实测直接崩。与 install.py
+# 同款双保险；install.ps1 里另设了 PYTHONUTF8=1。
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 

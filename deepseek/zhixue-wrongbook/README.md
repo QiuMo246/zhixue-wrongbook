@@ -35,19 +35,28 @@
 
 ### 0. 学生最懒安装法（推荐）：把下面这段话发给你的 AI 助手
 
-> 帮我安装智学网错题助手：从 Gitee 克隆 https://gitee.com/qiu_moRs/zhixue-wrongbook 到本地（GitHub 地址 https://github.com/QiuMo246/zhixue-wrongbook 作为后备），运行它根目录的
-> `python install.py --config --account <我的账号> --password <我的密码>`，
-> 然后重启 MCP 连接。装好后对我说「帮我同步错题」我应该能用。
+> 帮我安装智学网错题助手：从 Gitee 克隆 https://gitee.com/qiu_moRs/zhixue-wrongbook 到本地（GitHub 地址 https://github.com/QiuMo246/zhixue-wrongbook 作为后备），运行仓库里的
+> `deepseek/install.py --config`（它会自动定位真正的项目目录）。
+> 装好后重启 MCP 连接。
+>
+> 然后帮我录入智学网账号密码：在终端里运行
+> `deepseek/zhixue-wrongbook/tools/setup_account.py`，让我自己输入账号和密码
+> （密码输入时屏幕不显示，也不会留在命令行历史里 ——
+> 所以**不要**让我把密码发在对话里或写在命令行参数里）。
+> 录完对我说「帮我同步错题」我应该能用。
 > 遇到报错就自己排查修好，卡住了再问我。
 >
 > 补充（按你的实际情况二选一，AI 看得懂）：
 > · 我的电脑没装 Python → 用你自己（AI）自带的 Python 执行；
->   你也没有的话，直接跑仓库根目录的 `install.bat`（会自动下载便携 Python，无需管理员）。
-> · 没装 git → 别克隆了，直接 `python install.py --from-zip`（自动下载 zip 解压安装）。
+>   你也没有的话，直接跑仓库里的 `install.bat`（会自动下载便携 Python，无需管理员）。
+> · 没装 git → 别克隆了，直接给 `deepseek/install.py` 加 `--from-zip` 参数
+>   （自动下载 zip 解压安装）。
 
 AI 会替你完成克隆、建虚拟环境、装依赖、写 MCP 配置、登录智学网。
 **你只需要发这一句话 + 等它做完** —— 这也是你唯一一次输入账号密码
 （之后 Cookie 失效会自动重登，见第 3 步说明）。
+账号密码走 `setup_account.py` 的隐藏输入，**不进命令行历史**
+（2026-09-27 起安装提示词不再让密码出现在 `--password` 参数里）。
 
 动手能力强的可以跳过 AI，自己按 1→5 走：
 
@@ -63,12 +72,12 @@ python -m venv .venv
 ### 2. 先跑验收（不需要 Cookie、不需要联网）
 
 ```bash
-.venv/Scripts/python tools/acceptance.py     # 主干全链路，66 项
+.venv/Scripts/python tools/acceptance.py     # 主干全链路，94 项
 .venv/Scripts/python tools/edge_test.py      # 补测边界路径，179 项
-.venv/Scripts/python tools/mcp_e2e.py        # 走真实 MCP 协议，41 项
+.venv/Scripts/python tools/mcp_e2e.py        # 走真实 MCP 协议，59 项
 ```
 
-三套合计 **286 项检查**。其中 `edge_test.py` 专门覆盖主干验收走不到的路径：
+三套合计 **332 项检查**。其中 `edge_test.py` 专门覆盖主干验收走不到的路径：
 通道 B 的写入链路 `sync()`（用假对象离线跑，含 40217 重试）、
 .docx/.pdf 解析、DPAPI 降级、老库迁移、xlsx 优雅失败，
 以及 **P/Q/R/S 四节回归**（派生字段覆盖规则、参数形状、会话三态、路径解析）。
@@ -94,9 +103,15 @@ python -m venv .venv
 
 > 原理（2026-09-25 逆向实测）：真登录页是 `login_v1.html`，提交走
 > `POST /edition/login`，密码 RC4 加密（`rc4.js` 的 `zxlogin_secret`）。
-> 同域直接种会话，无 CAS、无极验 —— 用假账密实测能到达
-> 「账号或密码错误」的结构化校验，链路真实可用。
+> 同域直接种会话，无 CAS、无极验。
 > 风控要求验证码时会如实报错让你稍后再试，不硬绕。
+>
+> **2026-09-27 修正**：审计发现此前的 RC4 复刻把密钥流多套了一层
+> `S[...]`（与 rc4.js 原文逐句比对确认），密文和真实前端对不上 ——
+> 也就是说账密自动重登此前从未真正可用过（旧文档里「假账密能到达
+> 账号或密码错误」只说明接口可达，说明不了加密正确）。密钥流已改为
+> 与 rc4.js 一致的单重索引；**还需要一次真机账密登录验证**，
+> 如仍报「账号或密码错误」请反馈。
 >
 > 旧的「复制 Cookie」流程（`tools/scan_login.py --from-clipboard` /
 > `zx_session_set`）仍保留作备选。别用自动化浏览器登录（会触发极验，
@@ -201,9 +216,9 @@ zhixue-wrongbook/
 │  ├─ samples/                  # 样例数据 + 校准标注
 │  └─ wrongbook.db              # 本地库（首次运行生成）
 ├─ tools/
-│  ├─ acceptance.py             # 主干端到端验收（66 项，无需联网）
+│  ├─ acceptance.py             # 主干端到端验收（94 项，无需联网）
 │  ├─ edge_test.py              # 补测边界路径（179 项，无需联网）
-│  ├─ mcp_e2e.py                # MCP 通道端到端演示（41 项，含诊断闸门七态）
+│  ├─ mcp_e2e.py                # MCP 通道端到端演示（59 项，含诊断闸门七态）
 │  ├─ verify_p0.py              # P0 验证（需要 Cookie）
 │  └─ calibrate.py              # 相似度阈值校准
 ├─ skill/zhixue-wrongbook/      # 编排 Skill
@@ -393,6 +408,10 @@ zx_knowledge_points(query="西安事变", subject="历史")     → 按关键词
 
 **想加知识点**：直接改 `data/taxonomy.yaml` 就行，不用改代码。
 加完 `version` 顺手 +1（那个字段只是留痕，不影响已有分析结果）。
+
+⚠️ **改完要重启 MCP server**：词表（`load_taxonomy`）和配置（`get_config`）
+都是启动时缓存加载的（`lru_cache`），长驻的 stdio server 里改
+`taxonomy.yaml` / `config.yaml` 不会热生效 —— 改完重启才算数。
 
 ---
 

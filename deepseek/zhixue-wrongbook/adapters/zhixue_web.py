@@ -24,8 +24,6 @@ import requests
 
 from datetime import datetime, timezone
 
-import requests
-
 from adapters.zhixuewang import parse_cookie_string
 from core.fingerprint import check_response
 
@@ -69,8 +67,15 @@ class ZhixueWebClient:
         self.session = requests.Session()
         cookies = parse_cookie_string(raw_cookie)
         self.session.cookies.update(cookies)
+        # 缺 loginUserName 时给人话报错，不裸 KeyError（2026-09-27，优化.md #17）
+        uname = cookies.get("loginUserName")
+        if not uname:
+            raise ZhixueWebError(
+                "Cookie 里缺少 loginUserName 字段，通道 C 无法登录。"
+                "请在浏览器里重新完整复制 Cookie（F12 → Console → "
+                "copy(document.cookie)）再试。")
         self.session.cookies.set(
-            "uname", base64.b64encode(cookies["loginUserName"].encode()).decode())
+            "uname", base64.b64encode(uname.encode()).decode())
         self.timeout = timeout
         self._token: str | None = None
         self._token_at: float = 0.0

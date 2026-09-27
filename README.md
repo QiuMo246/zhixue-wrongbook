@@ -19,9 +19,9 @@
 
 ```
 deepseek/zhixue-wrongbook/   # 全部代码、测试、文档都在这里
-├─ server.py                 # MCP Server 入口（26 个工具）
+├─ server.py                 # MCP Server 入口（27 个工具）
 ├─ adapters/                 # 三条取数通道
 ├─ core/                     # 校验闸门、画像、导出
-├─ tools/                    # 328 项离线自检脚本
+├─ tools/                    # 332 项离线检查脚本
 └─ web/                      # 宣传网页（https://qiumo-zxw.pages.dev）
 ```

@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -30,12 +31,30 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+# 2026-09-27 修（优化.md 安装链路 P1「GBK 管道崩溃」）：中文 Windows 下管道
+# 输出默认 cp936，本脚本输出的 ⚠/✓/中文在 AI 助手（管道捕获）场景实测直接
+# UnicodeEncodeError 崩掉 —— 崩溃点在 pip 装完之后、MCP 配置之前，时机最差。
+# 入口先把 stdout/stderr 切到 UTF-8（errors=replace 双保险），配合
+# install.ps1 里设的 PYTHONUTF8=1，双通道保险。
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
 REQUIRED_IMPORTS = ["mcp", "pydantic", "yaml", "keyring", "requests", "PIL"]
 
 REPO = "QiuMo246/zhixue-wrongbook"          # GitHub 后备源
 GITEE_REPO = "qiu_moRs/zhixue-wrongbook"    # 默认源：国内免代理直连
 GITEE_TAG = "install"                       # 装安装包 zip 的 Gitee Release 标签
 REPO_BRANCH = "main"
+
+# 供应链完整性（2026-09-27 新增，优化.md 安装链路 P1「下载无完整性校验」）：
+# Release 附件是可变资源 —— 重建附件后**必须**同步更新这里的 sha256
+# （对 zip 文件执行 certutil -hashfile zhixue-wrongbook-main.zip SHA256 生成）。
+# 为空时降级为显式警告（不假装校验过）；--sha256 可临时指定。
+ZIP_SHA256 = ""
 
 # 全局：venv 不可用时降级为「无 venv 模式」，PY 指向当前解释器
 ROOT = Path(__file__).resolve().parent
@@ -103,8 +122,23 @@ def locate_project(root: Path) -> Path:
         "把这段输出发给你的 AI 排查。")
 
 
-def fetch_from_zip(target: Path, url: str = "") -> Path:
-    """下载仓库 zip 并解开到 target（剥掉顶层目录）。纯标准库，不需要 git。"""
+def _sha256_of(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def fetch_from_zip(target: Path, url: str = "",
+                   expected_sha256: str = "") -> Path:
+    """下载仓库 zip 并解开到 target（剥掉顶层目录）。纯标准库，不需要 git。
+
+    2026-09-27（优化.md 供应链）：下载后按 sha256 校验完整性 —— 期待值
+    优先取 --sha256 参数，其次 ZIP_SHA256 常量；两者都为空时**大声警告**
+    「本次下载未经完整性校验」，绝不静默装作校验过。
+    失败路径不再残留 _repo.zip（finally 清理）。
+    """
     # 学生环境没有代理，按国内可达性排序；逐个试，zip 魔数不对（如反爬
     # 返回 HTML 页面）也当失败继续换源。
     sources = [url] if url else [
@@ -116,41 +150,58 @@ def fetch_from_zip(target: Path, url: str = "") -> Path:
     tmp = target.parent / "_repo.zip"
     target.parent.mkdir(parents=True, exist_ok=True)
     last_err: Exception | None = None
-    for src in sources:
-        step(f"下载仓库 zip：{src}")
-        try:
-            with urllib.request.urlopen(src, timeout=120) as r, open(tmp, "wb") as f:
-                f.write(r.read())
-            if tmp.open("rb").read(2) == b"PK":
-                break
-            last_err = OSError("返回内容不是 zip（多半被反爬挡了）")
-            step(f"下载失败（{last_err}），换下一个源…")
-        except OSError as e:
-            last_err = e
-            step(f"下载失败（{e}），换下一个源…")
-    else:
-        raise SystemExit(
-            f"所有下载源都失败了（最后一个错误：{last_err}）。"
-            "手动下载仓库 zip 后用 --from-zip <zip路径> 安装。")
-    step(f"解压到 {target}")
-    with zipfile.ZipFile(tmp) as z:
-        tops = {n.split("/", 1)[0] for n in z.namelist() if n.strip("/")}
-        z.extractall(target.parent)
-    tmp.unlink()
-    # zip 顶层是一个单目录，但名字随打包方式而变（Gitee/GitHub 命名规则不同），
-    # 按解压出来的实际目录名剥掉这层挪到 target
-    extracted = target.parent / next(iter(tops)) if len(tops) == 1 else None
-    if extracted and extracted.exists():
-        if extracted.resolve() == target.resolve():
-            pass  # zip 顶层目录名恰好与 target 同名，无需搬运
-        elif target.exists():
-            raise SystemExit(
-                f"{target} 已存在 —— 换个 --target 或先删掉再试。")
+    try:
+        for src in sources:
+            step(f"下载仓库 zip：{src}")
+            try:
+                with urllib.request.urlopen(src, timeout=120) as r, open(tmp, "wb") as f:
+                    f.write(r.read())
+                if tmp.open("rb").read(2) == b"PK":
+                    break
+                last_err = OSError("返回内容不是 zip（多半被反爬挡了）")
+                step(f"下载失败（{last_err}），换下一个源…")
+            except OSError as e:
+                last_err = e
+                step(f"下载失败（{e}），换下一个源…")
         else:
-            extracted.rename(target)
-    elif not target.exists():
-        raise SystemExit("解压后没找到仓库目录，请把上面的输出发给 AI 排查。")
-    return target
+            raise SystemExit(
+                f"所有下载源都失败了（最后一个错误：{last_err}）。"
+                "手动下载仓库 zip 后用 --from-zip <zip路径> 安装。")
+
+        want = (expected_sha256 or ZIP_SHA256 or "").strip().lower()
+        actual = _sha256_of(tmp)
+        if want:
+            if actual != want:
+                raise SystemExit(
+                    f"zip 的 sha256 与期待值不符！\n  实际 {actual}\n  期待 {want}\n"
+                    "可能是下载被篡改/截断，或 Release 附件重建后没更新 ZIP_SHA256。"
+                    "确认附件没问题后，用 --sha256 <新哈希> 覆盖。")
+            step(f"sha256 校验通过：{actual[:16]}…")
+        else:
+            print("⚠ 本次下载未经完整性校验（ZIP_SHA256 未配置且未传 --sha256）。"
+                  f"\n  实际 sha256 = {actual}\n"
+                  "  请把它与发布页公布的哈希对照；若你是维护者，"
+                  "重建 Release 附件后记得把哈希更新进 install.py 的 ZIP_SHA256。")
+        step(f"解压到 {target}")
+        with zipfile.ZipFile(tmp) as z:
+            tops = {n.split("/", 1)[0] for n in z.namelist() if n.strip("/")}
+            z.extractall(target.parent)
+        # zip 顶层是一个单目录，但名字随打包方式而变（Gitee/GitHub 命名规则不同），
+        # 按解压出来的实际目录名剥掉这层挪到 target
+        extracted = target.parent / next(iter(tops)) if len(tops) == 1 else None
+        if extracted and extracted.exists():
+            if extracted.resolve() == target.resolve():
+                pass  # zip 顶层目录名恰好与 target 同名，无需搬运
+            elif target.exists():
+                raise SystemExit(
+                    f"{target} 已存在 —— 换个 --target 或先删掉再试。")
+            else:
+                extracted.rename(target)
+        elif not target.exists():
+            raise SystemExit("解压后没找到仓库目录，请把上面的输出发给 AI 排查。")
+        return target
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -279,6 +330,9 @@ def main() -> int:
     ap.add_argument("--from-zip", nargs="?", const="default", default="",
                     help="没有 git 时的兜底：直接下载仓库 zip 解压后安装"
                          "（不带 URL 用默认仓库）")
+    ap.add_argument("--sha256", default="",
+                    help="--from-zip 下载的 zip 的期待 sha256（供应链校验；"
+                         "不传则用内置 ZIP_SHA256，两者都空时只警告不拦）")
     ap.add_argument("--target", default="",
                     help="配合 --from-zip：解压目标目录（默认 ./zhixue-wrongbook）")
     ap.add_argument("--no-venv", action="store_true",
@@ -294,7 +348,8 @@ def main() -> int:
     if args.from_zip:
         target = Path(args.target or "zhixue-wrongbook").resolve()
         url = "" if args.from_zip in ("", "default") else args.from_zip
-        new_root = locate_project(fetch_from_zip(target, url))
+        new_root = locate_project(fetch_from_zip(target, url,
+                                                 expected_sha256=args.sha256))
         # 重新定位 ROOT 并切换过去继续安装
         global ROOT
         ROOT = new_root

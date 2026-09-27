@@ -56,9 +56,15 @@ async def main() -> int:
     items = json.loads(Path(args.payload).read_text(encoding="utf-8"))
     if isinstance(items, dict):
         items = [items]
-    pv = (args.prompt_version
-          or getattr(getattr(server.CONFIG, "host", None), "prompt_version", "")
-          or "analyze-v3")
+    # 2026-09-27 修（优化.md #16）：原来双层 getattr 静默兜底 —— Config 根本
+    # 没有 .host 属性，配置值永远取不到，每次都落在字面量 "analyze-v3"。
+    # Config 的取法是 CONFIG["host"]["prompt_version"]。
+    pv = args.prompt_version
+    if not pv:
+        try:
+            pv = server.CONFIG["host"].get("prompt_version") or "analyze-v3"
+        except (KeyError, AttributeError):
+            pv = "analyze-v3"
 
     print(f"待提交 {len(items)} 条 | analyzed_by={args.by} | prompt_version={pv}")
     if args.dry_run:

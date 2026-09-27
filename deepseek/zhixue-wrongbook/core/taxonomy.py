@@ -165,6 +165,18 @@ class Taxonomy:
 
 @lru_cache(maxsize=4)
 def load_taxonomy(path: str | None = None) -> Taxonomy:
-    p = Path(path) if path else DEFAULT_TAXONOMY_PATH
+    """加载受控词表。path 省缺时走 config.path("taxonomy") —— 它会读
+    ZX_TAXONOMY 环境变量（2026-09-27 修，优化.md #11：此前 ZX_TAXONOMY
+    是死配置，load_taxonomy 从不读它，edge_test / mcp_e2e 每次设它、
+    实际全部无效）。
+
+    ⚠️ 本函数是 lru_cache 的：长驻 stdio server 进程里改了 taxonomy.yaml
+    （或环境变量）**不会热加载，必须重启 server**。
+    """
+    if path:
+        p = Path(path)
+    else:
+        from .config import get_config   # 延迟导入避免 config↔taxonomy 环
+        p = get_config().path("taxonomy")
     with open(p, "r", encoding="utf-8") as fh:
         return Taxonomy(yaml.safe_load(fh))

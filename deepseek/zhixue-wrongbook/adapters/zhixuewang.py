@@ -27,6 +27,7 @@ from adapters.parsers.normalize import (download_images, make_id,
 from adapters.parsers.zhixue_export import (ANSWER_TYPE_MEANING,
                                             qtype_from_answer_type)
 from core.config import get_config
+from core.errors import ZxError
 from core.models import WrongQuestion
 from core.store import Store
 
@@ -384,9 +385,27 @@ def sync(store: Store, raw_cookie: str, subjects: list[str] | None = None,
     account = login(raw_cookie)
     student = to_student(account)
 
-    exams = list_exams(student, limit=max_exams)
+    exams = list_exams(student)
     if exam_ids:
-        exams = [e for e in exams if e["id"] in set(exam_ids)]
+        # 2026-09-27 修（优化.md #3）：指定 exam_ids 时**不许先按 max_exams
+        # 截断再过滤** —— 原来先截最近 N 场再挑，用户选的第 8 场会被截掉，
+        # 得到 exams_scanned=0 却 ok=true 的「静默没做」。这里列全量再过滤，
+        # 且一个都没命中时显式报错，不假装同步完成。
+        wanted = set(str(x) for x in exam_ids)
+        exams = [e for e in exams if str(e["id"]) in wanted]
+        if not exams:
+            known = list_exams(student, limit=20)
+            raise ZxError(
+                f"指定的 exam_ids 一场都没匹配上（共传 {len(exam_ids)} 个）。"
+                "不排除是 id 复制错或考试太久远不在列表里。",
+                code="exam_not_found",
+                missing=[f"有效的 exam_id（传入：{sorted(wanted)[:5]}…）"],
+                suggested_action=[
+                    "重新调 zx_list_exams 拿最新考试列表，按返回的 id 原样传",
+                    "很久以前的考试不在默认列表里 —— 让用户确认是否真的要那一场",
+                ])
+    else:
+        exams = exams[:max_exams] if max_exams else exams
 
     latest_exam_id, topic_set_ids = _latest_exam_topic_set_ids(student)
 
@@ -426,6 +445,10 @@ def sync(store: Store, raw_cookie: str, subjects: list[str] | None = None,
             entry = {"exam": exam["name"], "subject": sub["name"],
                      "count": 0, "param_used": None, "error": None}
             log_id = store.log_sync_start("api", sub["name"], exam["name"])
+            # sync_log 口径（2026-09-27 修，优化.md #8）：日志记的必须是
+            # **实际入库**的 added/updated/failed，不是「抓到的题数」；
+            # failed 也不许写死 0。真实数字只有循环自己知道，在这里累计。
+            sub_added = sub_updated = sub_failed = 0
             try:
                 # 只有「正在同步的考试 == 最新考试」时才用 topicSetId 兜底，
                 # 因为 topicSetId 是考试级的，跨考试用会得到错乱结果。
@@ -450,6 +473,7 @@ def sync(store: Store, raw_cookie: str, subjects: list[str] | None = None,
                     try:
                         res = store.upsert(q)
                     except Exception as exc:
+                        sub_failed += 1
                         report["failed"] += 1
                         report["errors"].append(
                             {"exam": exam["name"], "subject": sub["name"],
@@ -457,14 +481,17 @@ def sync(store: Store, raw_cookie: str, subjects: list[str] | None = None,
                              "error": f"入库失败 {type(exc).__name__}: {exc}"})
                         continue
                     if res == "added":
+                        sub_added += 1
                         report["added"] += 1
                     else:
+                        sub_updated += 1
                         report["updated"] += 1
                     if notes:
                         report["notes"].append(
                             {"exam": exam["name"], "subject": sub["name"],
                              "no": getattr(t, "dis_title_number", i), **notes})
-                store.log_sync_end(log_id, added=entry["count"], failed=0)
+                store.log_sync_end(log_id, added=sub_added,
+                                   updated=sub_updated, failed=sub_failed)
             except Exception as exc:
                 msg = f"{type(exc).__name__}: {exc}"
                 if _is_no_topic_error(exc):

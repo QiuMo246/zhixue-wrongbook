@@ -47,6 +47,7 @@ from core.constants import TIME_SCOPES
 from core.errors import ZxError, error_payload as _error_payload
 from core.export import (SOURCE_LABEL, try_pdf, write_json_report,
                          write_paper, wrongbook_markdown, wrongbook_xlsx)
+from core.fingerprint import check_response
 from core.models import Analysis, HistoryEntry, PracticeRef
 from core import practice_gates as gates
 from core.errors import CODE_PRACTICE_GATE
@@ -701,8 +702,15 @@ def zx_sync_browser(download_images: bool = False) -> str:
                       "login_hint": cap.get("login_hint")})
     store = _store()
     try:
+        # 包二指纹门禁（2026-09-27 接线，优化.md #19）：CDP 捕获的响应体
+        # 与通道 B 走同一道结构基线比对。字段改名/类型变化在这里显式报警，
+        # 而不是等 json_to_topics KeyError 硬崩、或类型变了静默入库错数据。
+        for body in cap.get("bodies") or []:
+            check_response(store.fingerprints, "cdp-getErrorbookList", body,
+                           datetime.now(timezone.utc).isoformat())
         report = browser_collect.sync_captured(
-            store, cap, images_dir=_abs_images(), download=download_images)
+            store, cap, images_dir=CONFIG.path("images_dir"),
+            download=download_images)
         library = store.counts()
     finally:
         store.close()
@@ -729,16 +737,18 @@ def zx_import_export_file(path: str, subject: str, exam_name: str,
                       **_error_payload(exc)})
     store = _store()
     added = updated = failed = 0
-    for q in questions:
-        try:
-            if store.upsert(q) == "added":
-                added += 1
-            else:
-                updated += 1
-        except Exception:
-            failed += 1
-    counts = store.counts()
-    store.close()
+    try:
+        for q in questions:
+            try:
+                if store.upsert(q) == "added":
+                    added += 1
+                else:
+                    updated += 1
+            except Exception:
+                failed += 1
+        counts = store.counts()
+    finally:
+        store.close()
     return _json({"ok": True, "parse": stats,
                   "imported": {"added": added, "updated": updated, "failed": failed},
                   "library": counts,
@@ -770,6 +780,10 @@ def get_questions(subject: str = "", exam: str = "", kp: str = "",
         "count": len(payload), "questions": payload, "library": counts,
         "note": "图片路径是本地绝对路径，可直接读图。"
                 "题干/答案/作答会进入模型上下文——这是设计上的显式声明，不是意外。",
+        "disclosure_note": ("本工具按设计直接返回题面原文（分析必须读题），"
+                            "不经 zx_diagnosis 的披露确认门禁 —— 那道门只挡"
+                            "诊断入口。题面出境这件事在这里同样成立，"
+                            "不想让内容离开本机请改用本地模型。"),
     })
 
 
@@ -1014,6 +1028,19 @@ def zx_subjects() -> str:
     return _json(out)
 
 
+def _scoped_review_queue(store: Store, subject: str, rng: dict) -> list[dict]:
+    """复核队列，但**只保留选定范围内的题**（2026-09-27 修优化.md #14①）。
+
+    原来只按科目过滤不按范围 —— 用户选了「本周午练」，返回的待复核却
+    可能是上个月的周测，「只覆盖选定范围」的承诺在这条列表上漏了气。
+    """
+    in_scope = {q.fingerprint() for q in store.query(
+        subject=subject, paper_types=rng["paper_types"],
+        date_from=rng["since"], date_to=rng["until"],
+        exclude_low_confidence=False)}
+    return [r for r in review_queue(store) if r["fingerprint"] in in_scope]
+
+
 @mcp.tool(description="学情统计（纯计数与加权平均，零模型调用）。"
                       "**这是硬闸门工具：调用前必须先问用户两件事 —— "
                       "① 科目（subject + user_confirmed=true）；"
@@ -1046,8 +1073,7 @@ def zx_profile(subject: str = "", user_confirmed: bool = False,
                              paper_types=rng["paper_types"],
                              date_from=rng["since"], date_to=rng["until"],
                              scope_label=rng["label"])
-        prof["review_queue"] = [r for r in review_queue(store)
-                                if r["subject"] == subject]
+        prof["review_queue"] = _scoped_review_queue(store, subject, rng)
         prof["library"] = store.counts()
         prof["ok"] = True
         prof["subject"] = subject
@@ -1159,8 +1185,7 @@ def zx_diagnosis(subject: str = "", user_confirmed: bool = False,
                     "disclosure_confirmed=true 重调；用户不同意就带 "
                     "stats_only=true，只做不含原文的统计诊断。不要替用户选。"),
                 "profile": prof,
-                "review_queue": [r for r in review_queue(store)
-                                 if r["subject"] == subject],
+                "review_queue": _scoped_review_queue(store, subject, rng),
             })
 
         redacted_samples = redact_payload(samples, names=names)
@@ -1182,11 +1207,13 @@ def zx_diagnosis(subject: str = "", user_confirmed: bool = False,
             "redaction": {
                 "applied": bool(found),
                 "pii_found": disclosure["pii_found"],
-                "note": ("已按高置信 PII 模式对出境副本打码（占位符跨调用稳定）；"
-                         "题面逻辑内容原样保留，不影响分析质量。"),
+                "note": (("已按高置信 PII 模式对出境副本打码（占位符跨调用稳定）；"
+                          "题面逻辑内容原样保留，不影响分析质量。") if found else
+                         ("本次高置信 PII 模式零命中，出境副本没有做过任何替换 —— "
+                          "没命中 ≠ 没有个人信息（见 pii_note），这只是如实说明"
+                          "本次打码层什么都没改。")),
             },
-            "review_queue": [r for r in review_queue(store)
-                             if r["subject"] == subject],
+            "review_queue": _scoped_review_queue(store, subject, rng),
             "how_to_write": (
                 "把这些数据写成给初中生看的诊断报告："
                 "① 先给结论（哪几个知识点最弱，按掌握度升序）；"
@@ -1308,6 +1335,17 @@ def zx_export_paper(items: str | list[dict], title: str = "错题同类练习卷
     return _json(out)
 
 
+def _out_file(out_path: str, default_name: str) -> Path:
+    """导出目标文件。相对 out_path **不落宿主 CWD**（宿主的 CWD 不可预测，
+    文件会散落在谁也找不到的地方），统一按项目 out/ 目录解析。"""
+    if out_path:
+        p = Path(out_path)
+        if p.is_absolute():
+            return p
+        return ROOT / "out" / p.name
+    return ROOT / "out" / default_name
+
+
 @mcp.tool(description="导出错题本表格。fmt 可选 md / xlsx / json。")
 @_guard
 def zx_export_wrongbook(fmt: str = "md", subject: str = "",
@@ -1317,19 +1355,26 @@ def zx_export_wrongbook(fmt: str = "md", subject: str = "",
         items = store.query(subject=subject or None)
         if fmt == "md":
             text = wrongbook_markdown(items, title=f"{subject or '全部'}错题本")
-            p = Path(out_path) if out_path else (ROOT / "out" /
-                                                f"wrongbook_{datetime.now():%Y%m%d_%H%M%S}.md")
+            p = _out_file(out_path,
+                          f"wrongbook_{datetime.now():%Y%m%d_%H%M%S}.md")
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(text, encoding="utf-8")
             return _json({"ok": True, "path": str(p), "count": len(items)})
         if fmt == "xlsx":
-            p = out_path or str(ROOT / "out" / f"wrongbook_{datetime.now():%Y%m%d_%H%M%S}.xlsx")
+            p = _out_file(out_path,
+                          f"wrongbook_{datetime.now():%Y%m%d_%H%M%S}.xlsx")
             path = wrongbook_xlsx(items, p)
             return _json({"ok": True, "path": path, "count": len(items)})
         if fmt == "json":
-            p = out_path or str(ROOT / "out" / f"wrongbook_{datetime.now():%Y%m%d_%H%M%S}.json")
+            p = _out_file(out_path,
+                          f"wrongbook_{datetime.now():%Y%m%d_%H%M%S}.json")
             write_json_report([_question_payload(q) for q in items], p)
-            return _json({"ok": True, "path": p, "count": len(items)})
+            return _json({"ok": True, "path": str(p), "count": len(items),
+                          "disclosure_note": (
+                              "本文件包含题面/作答原文，不经 zx_diagnosis 的披露"
+                              "确认门禁（导出是本地文件，是否上传/粘贴给 AI 由用户"
+                              "决定）。请别把它整份发给 AI —— 要分析请走 "
+                              "zx_diagnosis 的披露流程。")})
         return _json({"ok": False, "error": f"不支持的 fmt：{fmt}（可选 md / xlsx / json）"})
     finally:
         store.close()
@@ -1355,6 +1400,24 @@ def zx_sync_log(limit: int = 20) -> str:
     finally:
         store.close()
     return _json({"count": len(logs), "logs": logs})
+
+
+@mcp.tool(description="重置接口结构指纹基线（包二）。平台改版触发 fingerprint_drift 拦截后，"
+                      "**人工核对新结构没有问题**，用本工具接受新基线（下次响应重新登记）；"
+                      "endpoint 留空则重置全部端点。⚠️ 别在没核对的情况下用它吞掉报警 —— "
+                      "它删的是「静默错数据」的最后一道防线。")
+@_guard
+def zx_fingerprint_reset(endpoint: str = "") -> str:
+    ep = (endpoint or "").strip() or None
+    store = _store()
+    try:
+        n = store.fingerprints.reset(ep)
+    finally:
+        store.close()
+    return _json({"ok": True, "reset_endpoints": n,
+                  "scope": ep or "全部端点",
+                  "note": ("基线已清空。下一次对应接口的响应会作为新基线登记；"
+                           "若之后又立刻漂移，说明结构还在变，重新报警是正常的。")})
 
 
 def _install_unknown_arg_guard() -> dict:

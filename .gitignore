@@ -13,3 +13,12 @@ exports/
 # P0 探针产物含 Cookie / HAR / 作答照片，绝不入库
 probe/
 *.har
+
+# 宣传网页（web/）：构建产物与依赖不入库，源码正常提交
+web/node_modules/
+web/dist/
+
+# 设计工作台产物（impeccable 开发用上下文，非项目内容）
+PRODUCT.md
+.impeccable-brief.md
+.playwright-mcp/

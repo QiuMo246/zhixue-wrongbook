@@ -121,6 +121,18 @@ class FingerprintStore:
             "UPDATE endpoint_fingerprint SET sample_count = sample_count + 1, "
             "updated_at = ? WHERE endpoint = ?", (now, endpoint))
 
+    def reset(self, endpoint: str | None = None) -> int:
+        """清基线（2026-09-27 新增，优化.md #24）：平台改版后由用户显式接受
+        新基线的正规路径，不再只能手删表。endpoint=None 重置全部。
+        返回删除的端点数。"""
+        if endpoint:
+            cur = self.conn.execute(
+                "DELETE FROM endpoint_fingerprint WHERE endpoint = ?", (endpoint,))
+        else:
+            cur = self.conn.execute("DELETE FROM endpoint_fingerprint")
+        self.conn.commit()
+        return int(cur.rowcount or 0)
+
 
 def check_response(store_fp: FingerprintStore | None, endpoint: str,
                    data, now: str) -> dict:
@@ -153,4 +165,7 @@ def check_response(store_fp: FingerprintStore | None, endpoint: str,
             "把本条 error 原文发给维护者核对接口改动",
             f"新结构字段路径（新增）：{d['added'][:8]}",
             f"消失的字段路径：{d['removed'][:8]}",
+            "人工核对新结构没有问题后，调 zx_fingerprint_reset(endpoint) 接受"
+            "新基线（endpoint 传本条 error 里的接口名；留空则重置全部）—— "
+            "别在没核对之前重置，那是「静默错数据」的最后一道防线",
         ])

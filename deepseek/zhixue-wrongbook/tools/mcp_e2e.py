@@ -355,6 +355,10 @@ async def main() -> int:
         "stem_html": "<p>已知方程 x^2 - 5x + k = 0 有两个不相等的实数根，求 k 的取值范围。</p>",
         "answer": "k < 25/4", "analysis": "由 Δ = 25 - 4k > 0 得 k < 25/4。",
         "verified": True, "attempts": 1, "source_topic": fp[:12],
+        # 2026-09-27 修（优化.md #2）：门禁不再信任自报 strength，会拿原料
+        # 当场重算 —— 所以正例必须带 standard_answer（以前只报 strength 就能过，
+        # 恰好说明金丝雀自己沾着问题过闸）。
+        "standard_answer": "k < 25/4",
         "strength": "exact",
         "verification": [{"name": "题型一致", "kind": "hard", "passed": True, "value": "解答题"},
                          {"name": "知识点 Jaccard", "kind": "hard", "passed": True, "value": 1.0}],
@@ -370,6 +374,10 @@ async def main() -> int:
     log("zx_review_queue 可调用", "items" in r, f"{r.get('count')} 条待复核")
     r = json.loads(text_of(await call("zx_sync_log", {})))
     log("zx_sync_log 可调用", "logs" in r, f"{r.get('count')} 条日志")
+    # 2026-09-27 新增（优化.md #24）：平台改版后接受新基线的正规路径
+    r = json.loads(text_of(await call("zx_fingerprint_reset", {})))
+    log("zx_fingerprint_reset 可调用且幂等（空基线重置 0 个）",
+        r.get("ok") is True and r.get("reset_endpoints") == 0, str(r))
 
     # ---- 10b. 两段式知识点路径（文档歧义处：示例用两段，规范说三段） ----
     r = json.loads(text_of(await call("submit_analysis", {
@@ -435,6 +443,7 @@ async def main() -> int:
         "zx_subjects", "zx_profile", "zx_diagnosis", "zx_diagnosis_log",
         "zx_review_queue", "zx_export_paper", "zx_export_wrongbook",
         "zx_purge", "zx_sync_log",
+        "zx_fingerprint_reset",   # 2026-09-27 新增（优化.md #24）
     ])
     extra = sorted(set(names) - set(EXPECTED_TOOLS))
     missing = sorted(set(EXPECTED_TOOLS) - set(names))
@@ -471,11 +480,18 @@ async def main() -> int:
     log("扫描不空转：get_questions（设计内的题面出口）确实含 PII 原文",
         seed_ok, "题面按设计原样出境，由宿主在对话层负责不外传")
 
-    # 元数据 / 聚合类出口逐个扫：
-    SCAN_TARGETS = ["zx_sync_log", "zx_diagnosis_log", "zx_session_status",
-                    "zx_subjects", "zx_knowledge_points", "zx_review_queue"]
-    for t in SCAN_TARGETS:
-        payload = await call(t, {})
+    # 元数据 / 聚合类出口逐个扫（2026-09-27 补 zx_profile，优化.md #25：
+    # 出口扫描此前漏了它 —— zx_profile 带 review_queue 和样本明细，
+    # 属于必须盯的出口）：
+    SCAN_TARGETS: list[tuple[str, dict]] = [
+        ("zx_sync_log", {}), ("zx_diagnosis_log", {}), ("zx_session_status", {}),
+        ("zx_subjects", {}), ("zx_knowledge_points", {}), ("zx_review_queue", {}),
+        ("zx_profile", {"subject": "数学", "user_confirmed": True,
+                        "paper_types": ["全部"], "time_scope": "全部",
+                        "scope_confirmed": True}),
+    ]
+    for t, args in SCAN_TARGETS:
+        payload = await call(t, args)
         blob = text_of(payload)
         leak = [c for c in CANARIES if c in blob]
         log(f"出口 PII 扫描：{t}", not leak,

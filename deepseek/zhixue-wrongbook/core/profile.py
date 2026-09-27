@@ -24,7 +24,8 @@ from datetime import date, datetime, timezone
 from typing import Iterable
 
 from .constants import (DECAY_MID_DAYS, DECAY_RECENT_DAYS, DECAY_W_MID,
-                        DECAY_W_OLD, DECAY_W_RECENT, MASTERY_MIN_SAMPLES)
+                        DECAY_W_OLD, DECAY_W_RECENT, MASTERY_MIN_SAMPLES,
+                        PARSE_CONFIDENCE_MIN)
 from .models import WrongQuestion
 from .store import Store
 
@@ -144,7 +145,8 @@ def build_profile(store: Store, subject: str | None = None,
     weak = sorted(measured, key=lambda r: (r["mastery"], -r["n"]))[:weak_top]
 
     excluded_low_conf = store.conn.execute(
-        "SELECT COUNT(*) c FROM questions WHERE parse_confidence < 0.5"
+        "SELECT COUNT(*) c FROM questions WHERE parse_confidence < ?",
+        (PARSE_CONFIDENCE_MIN,)
     ).fetchone()["c"]
 
     return {
@@ -181,7 +183,7 @@ def review_queue(store: Store) -> list[dict]:
         reasons = []
         if q.analysis and q.analysis.needs_review:
             reasons.append("分析标记 needs_review")
-        if q.parse_confidence < 0.5:
+        if q.parse_confidence < PARSE_CONFIDENCE_MIN:
             reasons.append(f"解析置信度低({q.parse_confidence})")
         if q.analysis and q.analysis.confidence < 0.5:
             reasons.append(f"分析置信度低({q.analysis.confidence})")

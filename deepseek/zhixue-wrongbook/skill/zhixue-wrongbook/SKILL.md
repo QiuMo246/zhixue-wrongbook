@@ -46,7 +46,7 @@ agent_created: true
 | `tools/submit_batch.py` | 一批分析一次性提交，省得一条条手敲 JSON |
 | `tools/mcp_cli.py` | 想手动戳某个 MCP 工具时 |
 | `tools/live_smoke.py` | 改了代码后，跑一遍真实账号的端到端（14 项） |
-| `tools/acceptance.py` `tools/edge_test.py` `tools/mcp_e2e.py` | 三套离线验收（合计 286 项），改完代码必须全跑 |
+| `tools/acceptance.py` `tools/edge_test.py` `tools/mcp_e2e.py` | 三套离线验收（合计 332 项），改完代码必须全跑 |
 | `tools/fetch_homework.py` | **拉「作业报告」里的午练 / 晚练 / 早读**（含题干、答案、解析）。见场景 7 |
 | `tools/probe_homework.py` | 排查「作业/报告类数据拿不到」时先跑它，四步定位卡在哪一层 |
 

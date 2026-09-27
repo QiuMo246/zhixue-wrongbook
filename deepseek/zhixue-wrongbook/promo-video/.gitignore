@@ -1,0 +1,6 @@
+# Remotion 产物与依赖不入库（2026-09-27 补，优化.md：42MB 裸奔）
+node_modules/
+out/
+.remotion/
+bundle/
+.DS_Store

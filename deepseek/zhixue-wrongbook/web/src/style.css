@@ -1,0 +1,186 @@
+/* ============================================================
+   智学网错题助手 · 宣传页全局样式
+   世界：红笔订正·错题本 —— 纸白方格底、墨蓝、订正红、荧光黄
+   ============================================================ */
+
+:root {
+  --paper: #fbfaf6;
+  --ink: #1e2a44;
+  --ink-soft: rgba(30, 42, 68, 0.66);
+  --ink-faint: rgba(30, 42, 68, 0.14);
+  --red: #e0453a;
+  --red-deep: #c2352b;
+  --yellow: #ffe24a;
+  --blue: #3a7bd5;
+  --card: #ffffff;
+
+  --font-body: system-ui, "Segoe UI", "Microsoft YaHei", "PingFang SC",
+    "Noto Sans SC", sans-serif;
+  --font-head: "MiSans", var(--font-body);
+  --font-mono: "Cascadia Code", Consolas, "JetBrains Mono", monospace;
+
+  --shadow-hard: 4px 4px 0 rgba(30, 42, 68, 0.9);
+  --shadow-card: 3px 3px 0 rgba(30, 42, 68, 0.16);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background-color: var(--paper);
+  /* 方格作业本纹理 */
+  background-image:
+    linear-gradient(rgba(30, 42, 68, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30, 42, 68, 0.045) 1px, transparent 1px);
+  background-size: 30px 30px;
+  font-family: var(--font-body);
+  font-size: 16.5px;
+  line-height: 1.75;
+  -webkit-font-smoothing: antialiased;
+}
+
+img {
+  max-width: 100%;
+}
+
+a {
+  color: var(--blue);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}
+
+/* ---------- 标题字体（自托管子集，回退系统粗黑） ---------- */
+.hf {
+  font-family: var(--font-head);
+  font-weight: 900;
+  letter-spacing: 0.015em;
+}
+
+h1, h2, h3 {
+  line-height: 1.3;
+  margin: 0;
+}
+
+/* ---------- 荧光笔划重点 ---------- */
+.hl {
+  background: linear-gradient(
+    100deg,
+    transparent 2%,
+    var(--yellow) 6%,
+    var(--yellow) 94%,
+    transparent 98%
+  );
+  padding: 0 0.15em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* ---------- 版心 ---------- */
+.wrap {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 22px;
+}
+
+/* ---------- 虚线裁切线（板块分隔） ---------- */
+.cutline {
+  border: none;
+  border-top: 2px dashed var(--ink-faint);
+  margin: 0;
+}
+
+/* ---------- 按钮 ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 26px;
+  border-radius: 10px;
+  font-size: 17px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  border: 2px solid var(--ink);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  font-family: var(--font-body);
+}
+
+.btn:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--shadow-hard);
+}
+
+.btn-red {
+  background: var(--red);
+  color: #fff;
+  box-shadow: 3px 3px 0 rgba(30, 42, 68, 0.25);
+}
+
+.btn-ghost {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 3px 3px 0 rgba(30, 42, 68, 0.12);
+}
+
+.btn-copy {
+  font-size: 14px;
+  padding: 6px 14px;
+  border-width: 1.5px;
+  border-radius: 8px;
+  background: var(--yellow);
+  color: var(--ink);
+}
+
+/* ---------- 卡片 ---------- */
+.card {
+  background: var(--card);
+  border: 1.5px solid var(--ink-faint);
+  border-radius: 14px;
+  box-shadow: var(--shadow-card);
+}
+
+/* ---------- 章节骨架 ---------- */
+section {
+  padding: 72px 0;
+}
+
+.kicker {
+  display: inline-block;
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: var(--red);
+  margin-bottom: 10px;
+}
+
+.sec-title {
+  font-size: clamp(26px, 3.6vw, 38px);
+  margin-bottom: 14px;
+}
+
+.sec-lead {
+  color: var(--ink-soft);
+  max-width: 640px;
+  margin: 0 0 36px;
+}
+
+/* ---------- 红笔批注符号 ---------- */
+.mark-yes,
+.mark-no {
+  font-weight: 900;
+  margin-right: 8px;
+}
+
+.mark-yes { color: var(--red); }
+.mark-no  { color: var(--ink-faint); text-decoration: line-through; }
+
+@media (max-width: 640px) {
+  section { padding: 52px 0; }
+}

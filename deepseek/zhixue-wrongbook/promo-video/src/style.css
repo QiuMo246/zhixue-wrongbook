@@ -1,0 +1,6 @@
+/* 全局重置：视频内所有排版由组件内联样式控制 */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}

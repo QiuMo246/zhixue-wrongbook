@@ -33,6 +33,7 @@ from datetime import date, timedelta
 
 from .constants import (PAPER_TYPE_ALIASES, PAPER_TYPE_ALL, PAPER_TYPE_OTHER,
                         PAPER_TYPES, TIME_SCOPE_ALIASES, TIME_SCOPES)
+from .errors import ZxError
 
 # 一个「周」从周一起算（中国习惯）。date.weekday(): 周一=0
 _WEEK_START_WEEKDAY = 0
@@ -135,17 +136,36 @@ def resolve_time_scope(name: str, since: str = "", until: str = "",
 
 
 def _norm_date(s: str) -> str:
-    """把 2026/9/1、20260901、2026-09-01 都归一成 2026-09-01。"""
+    """把 2026/9/1、20260901、2026-09-01 都归一成 2026-09-01。
+
+    2026-09-27 修（优化.md #10）：归一结果必须再用 date.fromisoformat
+    验明正身 —— 原来形如 2026-02-30 的「看起来对、实际不存在」的日期
+    会直接进 SQL 字符串比较，范围静默漂移成空，闸门只说「该范围内无
+    数据」，用户根本想不到是日期写错了。现在直接报结构化错误。
+    """
     s = (s or "").strip()
     if not s:
         return ""
     digits = re.sub(r"\D", "", s)
     if len(digits) == 8:
-        return f"{digits[:4]}-{digits[4:6]}-{digits[6:]}"
-    m = re.match(r"^(\d{4})\D+(\d{1,2})\D+(\d{1,2})$", s)
-    if m:
-        return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
-    return s
+        out = f"{digits[:4]}-{digits[4:6]}-{digits[6:]}"
+    else:
+        m = re.match(r"^(\d{4})\D+(\d{1,2})\D+(\d{1,2})$", s)
+        if not m:
+            raise ZxError(
+                f"日期格式不认识：{s!r}。请用 YYYY-MM-DD（如 2026-09-01）。",
+                code="invalid_date",
+                suggested_action=["用 YYYY-MM-DD 格式重写这个日期再试"])
+        out = f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+    try:
+        date.fromisoformat(out)
+    except ValueError:
+        raise ZxError(
+            f"日期不合法：{s!r} 归一化为 {out}，但它不是真实存在的日期"
+            f"（比如 2 月没有 30 天）。范围不会按它过滤。",
+            code="invalid_date",
+            suggested_action=[f"把 {out} 改成真实存在的日期再试"])
+    return out
 
 
 def resolve_scope(paper_types, time_scope: str, since: str = "",

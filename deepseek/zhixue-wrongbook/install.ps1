@@ -12,6 +12,18 @@
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+# 2026-09-27 修（优化.md 安装链路「GBK 管道崩溃」）：强制 Python 子进程用
+# UTF-8 输出 —— 中文 Windows 下管道默认 cp936，install.py 的 ⚠/✓/中文在
+# AI 助手管道捕获场景实测直接 UnicodeEncodeError 崩掉。install.py 里另有
+# stdout.reconfigure 双保险。
+$env:PYTHONUTF8 = "1"
+
+# 供应链（优化.md「下载无完整性校验」）：uv 从 latest 改为**锁定版本**。
+# UvSha256 留空时只警告不拦（不假装校验过）；确认发布版哈希后填进来，
+# 例：certutil -hashfile uv.zip SHA256
+$UvVersion = "0.8.23"
+$UvSha256 = ""
+
 function Find-Python {
     $c = Get-Command python -ErrorAction SilentlyContinue
     if ($c -and (Test-Path $c.Source)) { return $c.Source }
@@ -41,8 +53,17 @@ function Get-Uv {
     Write-Host "==> No Python found. Downloading portable runtime manager uv (one-time, ~12MB)"
     New-Item -ItemType Directory -Force $bin | Out-Null
     $zip = Join-Path $bin "uv.zip"
-    Invoke-WebRequest "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip" `
+    Invoke-WebRequest "https://github.com/astral-sh/uv/releases/download/$UvVersion/uv-x86_64-pc-windows-msvc.zip" `
         -OutFile $zip -UseBasicParsing
+    if ($UvSha256) {
+        $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+        if ($actual -ne $UvSha256) {
+            throw "uv zip sha256 mismatch! actual=$actual expected=$UvSha256"
+        }
+    } else {
+        $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+        Write-Warning "uv download NOT integrity-verified (UvSha256 empty). actual sha256=$actual"
+    }
     $tmp = Join-Path $bin "uv_extract"
     Expand-Archive $zip -DestinationPath $tmp -Force
     Move-Item (Join-Path $tmp "uv.exe") $uv -Force

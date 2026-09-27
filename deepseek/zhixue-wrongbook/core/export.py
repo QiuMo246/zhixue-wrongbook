@@ -11,6 +11,7 @@ from __future__ import annotations
 import html
 import json
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,41 @@ TEMPLATE_PATH = ROOT / "templates" / "paper.html"
 OUT_DIR = ROOT / "out"
 
 SOURCE_LABEL = {"api": "接口", "api-homework": "作业接口", "export": "官方导出", "manual": "手动录入"}
+
+
+# ---------------------------------------------------------------------------
+# HTML 白名单清洗（2026-09-27 新增，优化.md #18）
+#
+# 题干 HTML 来自平台（可能带富文本）或宿主生成，直接插进导出页等于把
+# 不可信 HTML 写进本地 file:// 页面 —— <script>、on* 事件、javascript:
+# 链接都能执行。这里做一层**黑名单剥除**：脚本类标签连内容一起删，
+# 事件属性与危险协议一律剥掉。白名单式（只留允许标签）对题干里的
+# 公式 <img data-latex> / 上下标太容易误伤，黑名单 + 转义兜底更合适。
+# 已知残余风险：形如 javas&#99;ript: 的实体编码协议不在此层处理；
+# 个人自用 + 打印场景下这是够用的第一道闸。
+# ---------------------------------------------------------------------------
+_DANGEROUS_BLOCK_RE = re.compile(
+    r"<\s*(script|style|iframe|object|embed|link|meta|base|form|svg|math)\b[^>]*>"
+    r".*?<\s*/\s*\1\s*>", re.I | re.S)
+_DANGEROUS_OPEN_RE = re.compile(
+    r"<\s*(script|style|iframe|object|embed|link|meta|base|form|svg|math)\b[^>]*/?\s*>",
+    re.I)
+_EVENT_ATTR_RE = re.compile(
+    r"\son[a-z0-9]+\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", re.I)
+_DANGEROUS_URL_RE = re.compile(
+    r"(?<=\s)(?:href|src|action|xlink:href|formaction|poster)\s*=\s*"
+    r"(\"|')?\s*(?:javascript|vbscript|data:text/html)[^\"'>\s]*", re.I)
+
+
+def sanitize_html(text: str | None) -> str:
+    """剥除题干 HTML 里可执行的部分，保留普通标签/图片/公式结构。"""
+    if not text:
+        return ""
+    out = _DANGEROUS_BLOCK_RE.sub("", text)
+    out = _DANGEROUS_OPEN_RE.sub("", out)
+    out = _EVENT_ATTR_RE.sub("", out)
+    out = _DANGEROUS_URL_RE.sub("", out)
+    return out
 
 
 def _cell(text: str | None, limit: int = 60) -> str:
@@ -47,7 +83,8 @@ def wrongbook_markdown(questions: list[WrongQuestion],
         a = q.analysis
         lines.append("| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
             i, _cell(q.subject), _cell(q.exam.name), _cell(q.question.type, 12),
-            f"{q.score.got}/{q.score.full}" if q.score.full is not None else "-",
+            f"{q.score.got}/{q.score.full}"
+            if q.score.got is not None and q.score.full is not None else "-",
             f"{q.question.difficulty:.2f}" if q.question.difficulty is not None else "-",
             f"{q.question.class_score_rate:.2f}" if q.question.class_score_rate is not None else "-",
             _cell(a.error_type if a else "未分析", 12),
@@ -232,7 +269,7 @@ def render_paper(items: list[dict], title: str = "错题同类练习卷",
         blocks.append(f"""<div class="q">
   <div class="qh"><span>第 {i} 题 · {html.escape(str(it.get('qtype', '')))}</span>
     <span>{html.escape(str(it.get('subject', '')))} · 难度 {html.escape(str(it.get('difficulty', '-')))}</span></div>
-  <div class="stem">{it.get('stem_html', '')}{badge}</div>
+  <div class="stem">{sanitize_html(it.get('stem_html', ''))}{badge}</div>
   <div class="tags">知识点：{html.escape(kp_text)}
     　|　改写自：{html.escape(str(it.get('source_topic', '-')))}</div>
   <div class="ans"><b>参考答案：</b>{html.escape(str(it.get('answer', '')))}<br>

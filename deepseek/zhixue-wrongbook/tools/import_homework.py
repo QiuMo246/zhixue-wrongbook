@@ -50,7 +50,8 @@ SOURCE = "api-homework"
 
 def topic_to_raw_hw(t: dict, subject_name: str, exam_name: str, exam_date: str,
                     images_dir: Path, images_prefix: str,
-                    download: bool = True, config=None) -> tuple[dict, dict]:
+                    download: bool = True, config=None,
+                    grade: str | None = None) -> tuple[dict, dict]:
     """作业接口的一道题（原始 JSON dict）→ 通道内部 raw dict。
 
     字段对齐 adapters/zhixuewang.topic_to_raw（错题本链路），差异只有两点：
@@ -117,7 +118,10 @@ def topic_to_raw_hw(t: dict, subject_name: str, exam_name: str, exam_date: str,
         "subject": subject_name,
         "exam_name": exam_name,
         "exam_date": exam_date,
-        "grade": "八年级",
+        # 2026-09-27 修（优化.md #13）：年级不再写死「八年级」—— 非八年级
+        # 学生的元数据会全错。优先用作业报告里带的，其次 --grade 参数，
+        # 都没有就留空（宁缺勿错）。
+        "grade": grade or None,
         "stem_html": stem_html,
         "images": images,
         "qtype": qtype,
@@ -148,6 +152,9 @@ def main() -> int:
     ap.add_argument("--file", default="out/homework_report.json",
                     help="fetch_homework.py 的输出文件")
     ap.add_argument("--subject", default="", help="只导入这个学科，如 物理")
+    ap.add_argument("--grade", default="",
+                    help="年级（如 八年级）。不传则优先用报告里自带的 grade，"
+                         "再没有就留空 —— 不要替用户猜")
     ap.add_argument("--no-images", action="store_true",
                     help="不下载图片，只入库文本字段")
     args = ap.parse_args()
@@ -184,7 +191,8 @@ def main() -> int:
                         raw, notes = topic_to_raw_hw(
                             t, subject, exam_name, exam_date,
                             images_dir, prefix,
-                            download=not args.no_images, config=config)
+                            download=not args.no_images, config=config,
+                            grade=str(row.get("grade") or args.grade or ""))
                         q = normalize_question(
                             raw, source=SOURCE, source_version=SOURCE_VERSION,
                             seq=i)

@@ -54,6 +54,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from core.config import get_config  # noqa: E402
+from core.export import sanitize_html  # noqa: E402
 from core.models import html_to_text  # noqa: E402
 
 E = html.escape
@@ -135,8 +137,12 @@ def img_uri(path: Path, max_w: int = 720) -> str:
 # 数据读取
 # ---------------------------------------------------------------------------
 def load_questions(subject: str, qs: list[dict]) -> dict[str, dict]:
-    """从库里取题干 / 标准答案 / 平台解析，并把配图内嵌。"""
-    conn = sqlite3.connect(str(ROOT / "data" / "wrongbook.db"))
+    """从库里取题干 / 标准答案 / 平台解析，并把配图内嵌。
+
+    2026-09-27 修（优化.md #12）：库与图片路径改走 CONFIG（ZX_DB_PATH /
+    ZX_IMAGES_DIR 对本工具生效），不再写死 ROOT/data/。"""
+    config = get_config()
+    conn = sqlite3.connect(str(config.path("db_path")))
     conn.row_factory = sqlite3.Row
     info: dict[str, dict] = {}
     for r in conn.execute(
@@ -149,7 +155,7 @@ def load_questions(subject: str, qs: list[dict]) -> dict[str, dict]:
         }
     conn.close()
 
-    imgdir = ROOT / "data" / "images"
+    imgdir = config.path("images_dir")
     missing = 0
     for q in qs:
         n = int(str(q["id"]).split("_")[-1])
@@ -582,7 +588,7 @@ def build(spec: dict, info: dict[str, dict], profile, practice, platform) -> str
 <div class="pq" id="pq{i}">
   <div class="ph">
     <div class="pt">练习 {i} · {E(p.get('qtype', ''))} · 改自 {E(p.get('rewrite_of', ''))} {badge}</div>
-    <div class="stem2">{p.get('stem_html', '')}</div>
+    <div class="stem2">{sanitize_html(p.get('stem_html', ''))}</div>
   </div>
   <button class="btn" onclick="reveal({i},this)">显示答案</button>
   <div class="ans">

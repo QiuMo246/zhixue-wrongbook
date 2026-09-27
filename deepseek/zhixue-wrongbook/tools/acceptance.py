@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -61,8 +62,29 @@ def load_samples() -> list[dict]:
     return data["questions"]
 
 
+def _cleanup_tmpdir(tmpdir: Path) -> None:
+    """临时目录清理。放在 finally 里且失败要出声（2026-09-27 修，优化.md #23：
+    原来清理块在 K5 之前执行、K5 又在 tmpdir 里重建内容且之后无人清理，
+    每次成功运行必残留 data/zx_accept_*/；except-pass 吞掉 Windows 文件占用）。"""
+    if not tmpdir.exists():
+        return
+    try:
+        shutil.rmtree(tmpdir)
+    except Exception as exc:
+        print(f"\n[warn] 临时目录没清干净：{tmpdir}\n"
+              f"       {type(exc).__name__}: {exc}\n"
+              f"       （多为 Windows 文件占用，可手动删除）", file=sys.stderr)
+
+
 def main() -> int:
     tmpdir = Path(tempfile.mkdtemp(prefix="zx_accept_", dir=str(ROOT / "data")))
+    try:
+        return _run(tmpdir)
+    finally:
+        _cleanup_tmpdir(tmpdir)
+
+
+def _run(tmpdir: Path) -> int:
     db = tmpdir / "accept.db"
     imgs = tmpdir / "images"
     taxonomy = load_taxonomy()
@@ -141,8 +163,9 @@ def main() -> int:
         questions.append(q)
     check("样例数据可归一化为 WrongQuestion", len(questions) == 10,
           f"{len(questions)} 题", "C")
-    check("指纹稳定（同题两次算出的指纹相同）",
-          questions[0].fingerprint() == questions[0].fingerprint(),
+    check("指纹稳定（同一样例经 JSON 序列化往返重建后指纹一致）",
+          WrongQuestion(**json.loads(json.dumps(samples[0]))).fingerprint()
+          == questions[0].fingerprint(),
           questions[0].fingerprint(), "C")
     check("不同题指纹不同",
           questions[0].fingerprint() != questions[1].fingerprint(), "", "C")
@@ -268,7 +291,9 @@ def main() -> int:
     section("E. 掌握度：公式可复现")
     qs = store.query()
     m1 = mastery_for_kp(qs, "数学/一元二次方程/公式法与判别式", now)
-    m2 = mastery_for_kp(qs, "数学/一元二次方程/公式法与判别式", now)
+    # m2 从 SQLite **重新读一遍**再算 —— 原来两次喂同一内存对象，自比较接近恒真；
+    # 重读能额外验到「行 → 对象 → 公式」往返不丢精度
+    m2 = mastery_for_kp(store.query(), "数学/一元二次方程/公式法与判别式", now)
 
     def _w(days: int) -> float:
         return 1.0 if days <= 30 else (0.6 if days <= 90 else 0.3)
@@ -381,8 +406,13 @@ def main() -> int:
           and eq[0].score.got == 3, f"{eq[0].answer.standard!r} / {eq[0].score.got}", "H")
     check("解析置信度按字段齐备度计算", 0 < eq[0].parse_confidence <= 1,
           f"{eq[0].parse_confidence}", "H")
-    check("低置信度题会被标记（供统计排除）", stats["low_confidence"] >= 0,
-          f"low_confidence={stats['low_confidence']}", "H")
+    # 2026-09-27 修（优化.md #23）：原来是 `>= 0` 恒真断言。现在逐题重算
+    # 期望值，让这条检查真的能红。
+    from core.constants import PARSE_CONFIDENCE_MIN   # noqa: E402
+    expected_low = sum(1 for _q in eq if _q.parse_confidence < PARSE_CONFIDENCE_MIN)
+    check("低置信度题计数与逐题核对一致（不再恒真）",
+          stats["low_confidence"] == expected_low,
+          f"stats={stats['low_confidence']}，逐题核对={expected_low}", "H")
     for q in eq:
         store.upsert(q)
     check("导出通道的题也进了同一个库", store.counts()["total"] > len(questions),
@@ -424,16 +454,16 @@ def main() -> int:
     check("科目清单 = 标准学科顺序 ∪ 受控词表 ∪ 库内实际科目",
           set(opts["taxonomy_subjects"]) <= {r["subject"] for r in opts["subjects"]}
           and "数学" in opts["with_questions"],
-          f"候选 {len(opts['subjects'])} 个；库内有数据的：{opts['with_questions']}")
+          f"候选 {len(opts['subjects'])} 个；库内有数据的：{opts['with_questions']}", "J")
     check("排序按固定学科顺序，不按题数（不让数据替用户做决定）",
           [r["subject"] for r in opts["subjects"]][:3] == ["语文", "数学", "英语"],
-          str([r["subject"] for r in opts["subjects"]][:6]))
+          str([r["subject"] for r in opts["subjects"]][:6]), "J")
     check("字段自洽：has_questions ≡ 题数>0，diagnosable ≡ 已分析数>0",
           all(r["has_questions"] == (r["questions"] > 0)
               and r["diagnosable"] == (r["analyzed"] > 0)
               for r in opts["subjects"]),
           str([(r["subject"], r["questions"], r["analyzed"], r["diagnosable"])
-               for r in opts["subjects"] if r["has_questions"]]))
+               for r in opts["subjects"] if r["has_questions"]]), "J")
     # 「库里有题、但受控词表里没这一科」是最容易被假装过去的一档：
     # 能列出来、能被用户选中，却暂时做不了知识点级分析。
     # 用「生物」实测（生物不在受控词表里；2026-09-25 补的是历史/道法，不是生物）。
@@ -448,20 +478,20 @@ def main() -> int:
     check("库内有题但词表没有的学科：能列出，但如实标 in_taxonomy=false",
           hrow is not None and hrow["has_questions"] is True
           and hrow["in_taxonomy"] is False and hrow["diagnosable"] is False,
-          str(hrow))
+          str(hrow), "J")
     check("历史 / 道法 反过来应标 in_taxonomy=true（已补词表）",
           all(r["in_taxonomy"] for r in opts2["subjects"]
               if r["subject"] in ("历史", "道法")),
           str([(r["subject"], r["in_taxonomy"]) for r in opts2["subjects"]
-               if r["subject"] in ("历史", "道法")]))
+               if r["subject"] in ("历史", "道法")]), "J")
     _prompt = ask_user_prompt(opts)
     check("「照读即可」的问话含候选科目与题数",
-          "你想诊断哪一科" in _prompt and "数学" in _prompt, _prompt[:90])
+          "你想诊断哪一科" in _prompt and "数学" in _prompt, _prompt[:90], "J")
     check("科目别名归一化（政治/道德与法治 → 道法）",
           normalize_subject("政治") == "道法"
           and normalize_subject("道德与法治") == "道法"
           and normalize_subject(" 数学 ") == "数学",
-          f"政治→{normalize_subject('政治')}")
+          f"政治→{normalize_subject('政治')}", "J")
 
     _kp = "数学/一元二次方程/公式法与判别式"
     aid = store.log_diagnosis("数学", user_confirmed=True,
@@ -473,7 +503,7 @@ def main() -> int:
           bool(logs) and logs[0]["id"] == aid and logs[0]["subject"] == "数学"
           and logs[0]["user_confirmed"] is True and logs[0]["weak_top"] == [_kp],
           f"audit_id={aid}，共 {len(logs)} 条："
-          f"{[(x['subject'], x['user_confirmed']) for x in logs]}")
+          f"{[(x['subject'], x['user_confirmed']) for x in logs]}", "J")
 
     # ---------------------------------------------------------------- K
     section("K. 数据层收尾")
@@ -484,17 +514,8 @@ def main() -> int:
           f"{counts}", "K")
     store.close()
 
-    # 清理临时库（真删）
-    s2 = Store(db, imgs)
-    removed = s2.purge(confirm=True)
-    check("zx_purge 真删（库文件 + WAL/SHM + 图片）",
-          removed["db"] is True and not db.exists(), str(removed), "J")
-    try:
-        for f in sorted(tmpdir.rglob("*"), reverse=True):
-            f.unlink() if f.is_file() else f.rmdir()
-        tmpdir.rmdir()
-    except Exception:
-        pass
+    # 真删检查挪到 K5 之后（2026-09-27 修，优化.md #23）：原来清理块跑在
+    # K5 前面，K5 又往 tmpdir 里写内容，之后无人清理 → 每次运行必残留。
 
     # ---------------------------------------------------------------- K2
     section("K2. 接口结构指纹（包二）")
@@ -568,6 +589,15 @@ def main() -> int:
     check("白名单求值器：字母/下划线/属性注入 → 拒判（None）",
           eval_expr("__import__('os')") is None
           and eval_expr("(1).real") is None, "")
+    # 2026-09-27 新增（优化.md #5）：大指数 DoS 回归 —— 原实现 9^9^9 要算
+    # 30 分钟量级且 stdio 单线程会整条卡死；现在必须在预算内拒绝
+    import time as _t   # noqa: E402
+    _t0 = _t.perf_counter()
+    check("大指数被数值预算拦下（undecidable，毫秒级拒绝）",
+          eval_expr("9^9^9") is None and _t.perf_counter() - _t0 < 1.0,
+          f"耗时 {_t.perf_counter() - _t0:.3f}s")
+    check("常规幂运算不受预算影响",
+          eval_expr("2^10") == 1024.0 and eval_expr("(-2)^3 + 5") == -3.0, "")
     eq = check_equation("2^2 - 5*2 + 6 = 0")
     check("回代等式成立 → numeric/match",
           eq["verdict"] == "match" and eq["strength"] == "numeric", eq["detail"])
@@ -582,22 +612,33 @@ def main() -> int:
     v = verify_answer("见解析", standard_answer="略", self_check="")
     check("无标准答案/成段文字 → 如实 weak/undecidable，不冒充 strong",
           v["strength"] in ("weak", "undecidable"), v["detail"])
+    # 2026-09-27 更新（优化.md #2）：门禁**不信任自报 strength**，当场重算。
+    # ok1 现在必须带原料（answer + standard_answer）；
+    # liar（只报 strength 无原料）和 liar2（原料对不上）是本次修的洞。
     errs = gate_export_items([
-        {"gen_id": "ok1", "verified": True, "strength": "exact"},
+        {"gen_id": "ok1", "verified": True, "strength": "exact",
+         "answer": "k < 25/4", "standard_answer": "k < 25/4"},
         {"gen_id": "ok2", "verified": True,
          "self_check": "2^2 - 5*2 + 6 = 0"},
         {"gen_id": "bad1", "verified": True},
         {"gen_id": "bad2", "verified": True, "self_check": "1 + 1 = 3"},
+        {"gen_id": "liar", "verified": True, "strength": "numeric"},
+        {"gen_id": "liar2", "verified": True, "strength": "exact",
+         "answer": "k < 25/4", "standard_answer": "k > 25/4"},
         {"gen_id": "fine", "verified": False},
     ])
     bad_ids = {e.split(":")[0] for e in errs}
-    check("诚实门禁：weak 不许冒充 strong（bad1/bad2 拒，ok1/ok2/fine 过）",
-          bad_ids == {"bad1", "bad2"}, str(errs)[:150])
+    check("诚实门禁：自报 strength 不算数（bad1/bad2/liar/liar2 拒，ok1/ok2/fine 过）",
+          bad_ids == {"bad1", "bad2", "liar", "liar2"}, str(errs)[:150])
 
     # ---------------------------------------------------------------- K5
     section("K5. CDP 借请求采集（包一，离线部分：状态机 + 字段映射 + 入库管线）")
-    os.environ.setdefault("ZX_BROWSER_PROFILE",
-                          str(Path(tmpdir) / ".browser-cdp"))
+    # 2026-09-27 修（优化.md #20）：必须**强制赋值**，不能用 setdefault ——
+    # 用户 shell 若已设 ZX_BROWSER_PROFILE（config.py 明文推荐用它做隔离），
+    # setdefault 不生效，K5 会向真实 profile 写假死 pid 的 marker，
+    # daemon_status() 读到死 pid 触发 clear_marker()，把真实采集守护进程
+    # 的 marker 删掉。与 mcp_e2e 对 ZX_CRED_* 的强制赋值做法对齐。
+    os.environ["ZX_BROWSER_PROFILE"] = str(Path(tmpdir) / ".browser-cdp")
     from adapters import browser_collect as bc          # noqa: E402
 
     check("URL 匹配：子串命中",
@@ -637,10 +678,20 @@ def main() -> int:
     check("sync_captured 复用现有管线入库（source=api）",
           report["added"] == 1 and report["failed"] == 0, str(report)[:120])
     got = store2.query(subject="数学")
-    check("入库结果可被现有查询读到（考试名取 topicSourcePaperName）",
-          len(got) == 1 and got[0].exam.name == "20260918八年级周测"
-          and got[0].source == "api", "")
+    # 2026-09-27：清理时序修好后（#23），跑到这里库里还有前面各段的数学题，
+    # 不再是 K5 独占的空库 —— 所以改成精确定位 CDP 那道题。旧断言
+    # 「库里恰好 1 道」恰恰依赖被修掉的清理时序 bug（清库在前、K5 在后）。
+    cdp = [q for q in got if q.exam.name == "20260918八年级周测"]
+    check("CDP 入库结果可被现有查询读到（考试名取 topicSourcePaperName）",
+          len(cdp) == 1 and cdp[0].source == "api" and cdp[0].subject == "数学",
+          f"数学共 {len(got)} 题，命中 CDP 卷 {len(cdp)} 道")
     store2.close()
+
+    # 真删检查（从 K 段挪来，见 #23 修复说明）
+    s2 = Store(db, imgs)
+    removed = s2.purge(confirm=True)
+    check("zx_purge 真删（库文件 + WAL/SHM + 图片）",
+          removed["db"] is True and not db.exists(), str(removed), "K")
 
     # ---------------------------------------------------------------- 汇总
     passed = sum(1 for r in RESULTS if r["ok"])

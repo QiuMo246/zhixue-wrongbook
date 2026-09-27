@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- 2026-09-27 新增（优化.md 安装链路 P2）：静态站兜底 CSP。
+         站点无第三方脚本/统计，Vue 运行时会注入内联 style，故 style-src 放行 'unsafe-inline'。 -->
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="智学网错题助手：把智学网的错题自动同步到本机，AI 帮你分析错因、找薄弱项、出练习卷、自动批改。数据全在自己电脑上。" />
+    <title>智学网错题助手 · 把错题变成你的专属练习卷</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -209,13 +209,20 @@ class WrongQuestion(BaseModel):
         踩过的坑（2026-09-24）：题型判定规则一改，11 道已入库的题
         指纹全变、被当成新题重复入库，题库凭空多出 11 条。
         推导字段不该参与身份判定。
+
+        2026-09-27 修（优化.md #6）：
+          * **剔除 exam.date** —— 它本来就是近似值：通道 B 用接口的
+            examCreateDateTime（UTC 口径），作业通道用本地时间，CDP 通道
+            干脆没有。同一份卷子跨通道同步日期差一天/缺失 → 指纹不同 →
+            重复入库，直接违背上面那条「应该合并成一条」的承诺。
+          * **去掉 stem[:800] / standard[:400] 截断** —— 指纹是身份，
+            截断让超长题有碰撞可能；哈希全文没有额外成本。
         """
         basis = "|".join([
             squash(self.subject),
             squash(self.exam.name),
-            squash(self.exam.date or ""),
-            squash(self.stem_text)[:800],
-            squash(self.standard_text)[:400],
+            squash(self.stem_text),
+            squash(self.standard_text),
         ])
         return hashlib.sha256(basis.encode("utf-8")).hexdigest()[:32]
 

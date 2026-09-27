@@ -133,8 +133,21 @@ def start_daemon(port: int = 0) -> dict:
         return {"ok": True, "already_running": True, **daemon_status()}
 
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    # first_run 必须在 Chrome 启动**之前**判（2026-09-27 修，优化.md #15）：
+    # 原来在启动后查 Cookies 文件，那时 Chrome 已经把 profile 初始化好了，
+    # 永远返回 False，「首次启动」信号从来没对过。
+    first_run = not (PROFILE_DIR / "Default" / "Cookies").exists()
     port = int(port) or 9333
+    proc = None
     for _ in range(10):
+        # 上一次探测没通过的 Chrome 先收掉再起新的 —— 不回收的话慢机器
+        # 上可能连开 10 个窗口（优化.md #15）。
+        if proc is not None:
+            try:
+                proc.kill()
+            except OSError:
+                pass
+            proc = None
         proc = subprocess.Popen(
             [str(chrome), f"--remote-debugging-port={port}",
              f"--user-data-dir={PROFILE_DIR}", "--no-first-run",
@@ -144,12 +157,16 @@ def start_daemon(port: int = 0) -> dict:
         info = _http_json(f"http://127.0.0.1:{port}/json/version", timeout=2)
         if info and "webSocketDebuggerUrl" in info:
             write_marker(proc.pid, port)
-            first_run = not (PROFILE_DIR / "Default" / "Cookies").exists()
             return {"ok": True, "port": port, "pid": proc.pid,
                     "first_run": first_run,
                     "note": "Chrome 已启动。请在窗口里登录智学网一次，"
                             "登录态会留在这个专用浏览器里。"}
         port += 1
+    if proc is not None:
+        try:
+            proc.kill()
+        except OSError:
+            pass
     raise ZxError(
         "Chrome 启动后 10 次都没有出现 CDP 调试端口 —— 可能被安全软件拦截。",
         code="browser_daemon_failed",
@@ -317,18 +334,21 @@ def capture_errorbook(timeout: float = 40) -> dict:
         t.close()
 
     raw_topics: list[dict] = []
+    bodies: list[dict] = []          # errorCode==0 的完整响应体，供包二指纹门禁比对
     for g in got:
         try:
             data = json.loads(g.get("body") or "")
         except ValueError:
             continue
-        if data.get("errorCode") != 0:
+        if not isinstance(data, dict) or data.get("errorCode") != 0:
             continue
+        bodies.append(data)
         lst = ((data.get("result") or {}).get("wrongTopicAnalysis")
                or {}).get("topicList") or []
         raw_topics.extend(lst)
 
     return {"ok": True, "captured": len(got), "raw_topics": raw_topics,
+            "bodies": bodies,
             "not_verified": True,
             "login_hint": (None if raw_topics else
                            "没抓到错题本数据 —— 大概率登录态失效或页面结构不同。"
@@ -344,31 +364,51 @@ def json_to_topics(raw_topics: list[dict]):
     字段映射与库 student.py:838-856 的 get_errorbook 逐字段一致 ——
     这是通道 B 已在真实账号上验证过的映射，CDP 抓到的就是同一个接口
     的同一个响应体，所以直接复用，零新增解析假设。
+
+    2026-09-27（优化.md #15）：键缺失不再炸整批 —— 全部改 .get + 默认值，
+    一个字段缺失只影响那一道题的该字段。结构层面的漂移（字段改名/类型
+    变化）由包二指纹门禁在更上游拦截，这里不负责报警。
     """
     from zhixuewang.models import ErrorBookTopic
     out = []
     for each in raw_topics:
         out.append(ErrorBookTopic(
-            analysis_html=each["analysisHtml"],
-            answer_html=each["answerHtml"],
-            answer_type=each["answerType"],
-            is_correct=each["beCorrect"],
-            class_score_rate=each["classScoreRate"],
-            content_html=each["contentHtml"],
-            difficulty=each["difficultyValue"],
-            dis_title_number=each["disTitleNumber"],
+            analysis_html=each.get("analysisHtml") or "",
+            answer_html=each.get("answerHtml") or "",
+            answer_type=each.get("answerType") or "",
+            is_correct=bool(each.get("beCorrect")),
+            class_score_rate=each.get("classScoreRate") or 0,
+            content_html=each.get("contentHtml") or "",
+            difficulty=each.get("difficultyValue") or 0,
+            dis_title_number=str(each.get("disTitleNumber", "")),
             image_answer=each.get("imageAnswer"),
-            paper_id=each["paperId"],
-            subject_name=each["paperName"],
-            score=each["score"],
-            standard_answer=each["standardAnswer"],
-            standard_score=each["standardScore"],
-            topic_analysis_img_url=each["topicAnalysisImgUrl"],
-            topic_set_id=each["topicId"],
-            topic_img_url=each["topicImgUrl"],
-            topic_source_paper_name=each["topicSourcePaperName"],
+            paper_id=each.get("paperId", ""),
+            subject_name=each.get("paperName", ""),
+            score=each.get("score") or 0,
+            standard_answer=each.get("standardAnswer") or "",
+            standard_score=each.get("standardScore") or 0,
+            topic_analysis_img_url=each.get("topicAnalysisImgUrl") or "",
+            topic_set_id=each.get("topicId", ""),
+            topic_img_url=each.get("topicImgUrl") or "",
+            topic_source_paper_name=each.get("topicSourcePaperName") or "",
         ))
     return out
+
+
+def subject_from_paper(name: str) -> str:
+    """从试卷名里认出学科（2026-09-27 修，优化.md #7）。
+
+    CDP 通道的 paperName 是**试卷名**（如「20260918八年级数学午练」），
+    不是学科 —— 通道 B 的学科来自 get_subjects，CDP 没有这一环的等价物，
+    原来直接把试卷名当学科入库，zx_subjects 会把整串卷名当科目列出来。
+    这里按标准学科清单在卷名里找子串；认不出返回 ""，由调用方如实处理，
+    绝不拿卷名冒充学科。
+    """
+    from core.constants import SUBJECT_ORDER
+    for s in SUBJECT_ORDER:
+        if s in (name or ""):
+            return s
+    return ""
 
 
 def sync_captured(store, capture: dict, images_dir: Path,
@@ -382,8 +422,8 @@ def sync_captured(store, capture: dict, images_dir: Path,
     from adapters.zhixuewang import SOURCE_VERSION, topic_to_raw
     from core.config import get_config
 
-    report = {"added": 0, "updated": 0, "failed": 0, "exams": [],
-              "errors": [], "not_verified": True}
+    report: dict = {"added": 0, "updated": 0, "failed": 0, "exams": [],
+                    "errors": [], "subject_unresolved": [], "not_verified": True}
     topics = json_to_topics(capture.get("raw_topics") or [])
     by_paper: dict[str, list] = {}
     for tp in topics:
@@ -391,14 +431,22 @@ def sync_captured(store, capture: dict, images_dir: Path,
 
     for paper_id, group in by_paper.items():
         exam_name = group[0].topic_source_paper_name or paper_id
+        # 学科从卷名里认；认不出就记「未知」，绝不拿卷名当学科
+        # （2026-09-27 修，优化.md #7）
+        subj = subject_from_paper(group[0].subject_name)
+        if not subj:
+            subj = "未知"
+            if group[0].subject_name not in report["subject_unresolved"]:
+                report["subject_unresolved"].append(group[0].subject_name)
         exam = SimpleNamespace(name=exam_name, create_time=None)
-        log_id = store.log_sync_start("api-cdp", group[0].subject_name, exam_name)
+        log_id = store.log_sync_start("api-cdp", subj, exam_name)
         added = updated = failed = 0
+        group_errors: list[str] = []
         for i, t in enumerate(group, 1):
-            prefix = f"{paper_id[:8]}_{t.subject_name}_{i:03d}"
+            prefix = f"{paper_id[:8]}_{subj}_{i:03d}"
             try:
                 raw, _notes = topic_to_raw(
-                    t, t.subject_name, exam, None, images_dir, prefix,
+                    t, subj, exam, None, images_dir, prefix,
                     download=download, config=get_config())
                 q = normalize_question(raw, source="api",
                                        source_version=SOURCE_VERSION, seq=i)
@@ -409,13 +457,18 @@ def sync_captured(store, capture: dict, images_dir: Path,
                     updated += 1
             except Exception as exc:
                 failed += 1
+                group_errors.append(f"{type(exc).__name__}: {exc}")
                 report["errors"].append(
                     {"exam": exam_name, "topic": t.dis_title_number,
                      "error": f"{type(exc).__name__}: {exc}"})
+        # sync_log 口径（2026-09-27 修，优化.md #8）：error 只记**本试卷组**
+        # 的错误 —— 原来把全局 report["errors"] 拼进来，多份卷子时第一份
+        # 的日志会背上后面卷子的错。
         store.log_sync_end(log_id, added=added, updated=updated, failed=failed,
-                           error=";".join(e["error"] for e in report["errors"])[:400]
-                           if report["errors"] else None)
-        report["exams"].append({"exam": exam_name, "added": added,
+                           error=";".join(group_errors)[:400]
+                           if group_errors else None)
+        report["exams"].append({"exam": exam_name, "subject": subj,
+                                "added": added,
                                 "updated": updated, "failed": failed})
         report["added"] += added
         report["updated"] += updated

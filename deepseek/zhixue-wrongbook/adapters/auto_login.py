@@ -81,8 +81,14 @@ def rc4_hex(text: str, key: str = _RC4_KEY) -> str:
         i = (i + 1) % 256
         j = (j + S[i]) % 256
         S[i], S[j] = S[j], S[i]
-        k = S[(S[i] + (S[j] % 256)) % 256]
-        out.append(chr(ord(ch) ^ S[k]))
+        # 2026-09-27 修（优化.md #27，属实性核查推翻过一轮的「复刻正确」）：
+        # 与 static.zhixue.com 的 rc4.js 原文逐句比对，密钥流是**单重索引**
+        #   a = (S[i] + (S[j] % 256)) % 256 ; 输出 ^= S[a]
+        # 这里此前多套了一层 S[...]（先 k=S[a] 再 ^=S[k]），与真实前端
+        # 逐字节不同 —— 服务端按 rc4.js 解密时账密登录从写下的第一天起
+        # 就不可能成功。同一明文/密钥两种逻辑实测输出不同。
+        a = (S[i] + (S[j] % 256)) % 256
+        out.append(chr(ord(ch) ^ S[a]))
     return "".join(f"{ord(c):02x}" for c in out)
 
 
@@ -216,11 +222,19 @@ def ensure_session() -> tuple[str, bool]:
 
     Cookie 有效 → 原样返回；失效且有存档账密 → 自动重登并更新 Cookie；
     没有存档账密 → 抛 AutoLoginError，message 告诉用户跑一次 setup。
+
+    2026-09-27 修（优化.md #9）：session_check 返回 unreachable（网络不通）
+    时不再往下走账密重登 —— 「连不上智学网」≠「会话失效」，把还能用的
+    Cookie 当废的、甚至用账密重登，都会把「网络问题」误报成「账号问题」。
+    unreachable 时把 Cookie 原样交回，让调用方的真实请求去暴露网络问题。
     """
     cookie = session_store.get_cookie()
     if cookie:
         from adapters import zhixue_web
-        if zhixue_web.session_check(cookie).get("status") == "valid":
+        status = zhixue_web.session_check(cookie).get("status")
+        if status == "valid":
+            return cookie, False
+        if status == "unreachable":
             return cookie, False
 
     cred = load_credentials()
