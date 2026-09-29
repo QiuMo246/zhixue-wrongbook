@@ -244,6 +244,60 @@ async def main() -> int:
         f"{r.get('count')} 条（倒序）："
         f"{[(x['disclosure_confirmed'], x['time_scope']) for x in r['logs']]}")
 
+    # ---- 10d-2. 出网授权工具（Task2，移植 qwen disclosure.ts）----
+    # 前面 r2 用 disclosure_confirmed=true 放行时已把授权落成持久快照 ——
+    # 先验证这座桥：zx_consent_manifest 应显示 analysis 已授权。
+    r = json.loads(text_of(await call("zx_consent_manifest", {})))
+    log("zx_consent_manifest 列出全部 scope 的逐字段清单与授权状态",
+        r.get("ok") is True
+        and {"analysis", "vlm_ocr", "export"} <= set(r.get("scopes", []))
+        and r.get("manifests", {}).get("analysis", {}).get("fields"),
+        f"scopes={r.get('scopes')}")
+    an = [c for c in r.get("consent", []) if c["scope"] == "analysis"]
+    log("disclosure_confirmed=true 已落成持久授权（analysis granted=true）",
+        bool(an) and an[0]["granted"] is True, str(an))
+    log("vlm_ocr / export 如实标 enforced=false（只告知不拦截，不假装门禁）",
+        r["manifests"]["vlm_ocr"]["enforced"] is False
+        and r["manifests"]["export"]["enforced"] is False, "")
+
+    r = json.loads(text_of(await call("zx_consent_manifest", {"scope": "analysis"})))
+    log("zx_consent_manifest(scope=analysis) 只回该 scope 的清单与状态",
+        r.get("ok") is True and list(r.get("manifests", {}).keys()) == ["analysis"]
+        and [c["scope"] for c in r.get("consent", [])] == ["analysis"],
+        str(list(r.get("manifests", {}))))
+
+    r = json.loads(text_of(await call("zx_consent", {"scope": "bogus", "granted": True})))
+    log("zx_consent 传未知 scope → 明确拒绝并列出合法 scope",
+        r.get("ok") is False and "scopes" in r, r.get("error"))
+
+    # 拒绝后持久授权不再放行：不带 disclosure_confirmed 的诊断应重新被门禁挡下
+    r = json.loads(text_of(await call("zx_consent", {"scope": "analysis", "granted": False})))
+    log("zx_consent(granted=false) 记录拒绝",
+        r.get("ok") is True and r.get("recorded", {}).get("granted") is False,
+        str(r.get("recorded")))
+    r = json.loads(text_of(await call("zx_diagnosis",
+                                      {"subject": "数学", "user_confirmed": True,
+                                       "paper_types": ["全部"], "time_scope": "全部",
+                                       "scope_confirmed": True})))
+    log("拒绝持久授权后，不带 disclosure_confirmed 的诊断重新被挡（授权真拦得住）",
+        r.get("ok") is False and r.get("disclosure_required") is True
+        and r.get("consent_state") == "declined", str(r.get("consent_state")))
+
+    # 重新授权 → 不带 disclosure_confirmed 也能放行（持久授权真放得行）
+    r = json.loads(text_of(await call("zx_consent", {"scope": "analysis", "granted": True})))
+    log("zx_consent(granted=true) 重新授权",
+        r.get("ok") is True and r.get("recorded", {}).get("granted") is True, "")
+    r = json.loads(text_of(await call("zx_diagnosis",
+                                      {"subject": "数学", "user_confirmed": True,
+                                       "paper_types": ["全部"], "time_scope": "全部",
+                                       "scope_confirmed": True})))
+    log("持久授权后不带 disclosure_confirmed 也放行，标明 consent_source=persisted",
+        r.get("ok") is True and bool(r.get("audit_id"))
+        and "persisted" in str(r.get("consent_source", ""))
+        and isinstance(r.get("sample_questions"), list),
+        f"consent_source={r.get('consent_source')} "
+        f"样本题={len(r.get('sample_questions', []))}")
+
     r = json.loads(text_of(await call("zx_diagnosis",
                                       {"subject": "数学", "user_confirmed": True,
                                        "paper_types": ["午练"], "time_scope": "全部",
@@ -369,6 +423,31 @@ async def main() -> int:
     log("zx_export_paper 生成练习卷", r.get("ok") and Path(r["html"]).exists(),
         r.get("html"))
 
+    # 答案隔离（Task3，移植 qwen「题卡不含答案」）：默认 key，答案挪到卷末页
+    r = json.loads(text_of(await call("zx_export_paper", {
+        "items": items, "title": "答案隔离卷", "answer_layout": "key",
+        "out_path": str(TMP / "paper_key.html")})))
+    _key_html = Path(r["html"]).read_text(encoding="utf-8") if r.get("ok") else ""
+    log("zx_export_paper(key)：答案隔离到卷末答案页，题目区无内联答案块",
+        r.get("ok") and r.get("answer_layout") == "key"
+        and 'class="answer-key"' in _key_html and 'class="ans"' not in _key_html,
+        str(r.get("answer_note", ""))[:48])
+
+    r = json.loads(text_of(await call("zx_export_paper", {
+        "items": items, "title": "纯学生卷", "answer_layout": "hidden",
+        "out_path": str(TMP / "paper_hidden.html")})))
+    _hid_html = Path(r["html"]).read_text(encoding="utf-8") if r.get("ok") else ""
+    log("zx_export_paper(hidden)：全卷不含答案（25/4 不出现）",
+        r.get("ok") and "25/4" not in _hid_html
+        and 'class="answer-key"' not in _hid_html, "")
+
+    r = json.loads(text_of(await call("zx_export_paper", {
+        "items": items, "title": "非法布局", "answer_layout": "bogus",
+        "out_path": str(TMP / "paper_bogus.html")})))
+    log("zx_export_paper 传非法 answer_layout → 明确拒绝并列可选值",
+        r.get("ok") is False and "answer_layout" in str(r.get("error", "")),
+        r.get("error"))
+
     # ---- 10. review_queue / sync_log ----
     r = json.loads(text_of(await call("zx_review_queue", {})))
     log("zx_review_queue 可调用", "items" in r, f"{r.get('count')} 条待复核")
@@ -444,6 +523,7 @@ async def main() -> int:
         "zx_review_queue", "zx_export_paper", "zx_export_wrongbook",
         "zx_purge", "zx_sync_log",
         "zx_fingerprint_reset",   # 2026-09-27 新增（优化.md #24）
+        "zx_consent_manifest", "zx_consent",   # Task2 出网授权（移植 qwen disclosure.ts）
     ])
     extra = sorted(set(names) - set(EXPECTED_TOOLS))
     missing = sorted(set(EXPECTED_TOOLS) - set(names))

@@ -33,8 +33,10 @@ agent_created: true
 | `zx_subjects` | **生成个性化诊断前必须先调**：列出可诊断科目（含题数）给用户选 |
 | `zx_diagnosis` | **个性化诊断的唯一入口**（硬闸门：科目 + 试卷范围，两问都要问过） |
 | `zx_diagnosis_log` | 查诊断审计日志：核对「诊断前有没有先问科目和试卷范围」 |
+| `zx_consent_manifest` | 出网前**先调它**：列出各范围（analysis/vlm_ocr/export）逐字段披露清单与当前授权状态，把 fields+limitations 念给用户 |
+| `zx_consent` | 用户看完清单给了是/否后，记录**持久授权**（granted=true/false）。授权后清单不变则 zx_diagnosis 无需每次再确认；清单一改自动失效 |
 | `zx_profile` | 看掌握度和薄弱项（同样要求科目 + 试卷范围，两道闸门一致） |
-| `zx_export_paper` | 导出练习卷 |
+| `zx_export_paper` | 导出练习卷。`answer_layout` 控制答案摆放：**默认 `key`**（题目区不含答案、答案汇总到卷末独立答案页，学生可先做后对）；`inline`=答案印在每题下方（教师/讲评）；`hidden`=全卷不含答案（纯学生卷） |
 | `zx_export_wrongbook` | 导出错题本表格 |
 | `zx_review_queue` | 看哪些题需要人工复核 |
 
@@ -46,7 +48,7 @@ agent_created: true
 | `tools/submit_batch.py` | 一批分析一次性提交，省得一条条手敲 JSON |
 | `tools/mcp_cli.py` | 想手动戳某个 MCP 工具时 |
 | `tools/live_smoke.py` | 改了代码后，跑一遍真实账号的端到端（14 项） |
-| `tools/acceptance.py` `tools/edge_test.py` `tools/mcp_e2e.py` | 三套离线验收（合计 332 项），改完代码必须全跑 |
+| `tools/acceptance.py` `tools/edge_test.py` `tools/mcp_e2e.py` | 三套离线验收（合计 372 项），改完代码必须全跑 |
 | `tools/fetch_homework.py` | **拉「作业报告」里的午练 / 晚练 / 早读**（含题干、答案、解析）。见场景 7 |
 | `tools/probe_homework.py` | 排查「作业/报告类数据拿不到」时先跑它，四步定位卡在哪一层 |
 
@@ -119,22 +121,35 @@ agent_created: true
 - 每次通过的诊断都会写进 `diagnosis_log`（含科目、试卷类型、时间范围、两处确认声明、
   题数、薄弱项）。用户随时可以用 `zx_diagnosis_log` 核对这条规则有没有被绕过。
 
-### 硬规则 0-披露：题面出境必须先征得用户同意（2026-09-26 新增，包三）
+### 硬规则 0-披露：题面出境必须先征得用户同意（2026-09-26 新增，包三；2026-09-28 升级为逐字段清单 + 持久授权）
 
 两问都答完之后，`zx_diagnosis` 会返回 `disclosure_required=true` 和一份
-`disclosure` 清单（哪些字段要发给 AI 模型、扫描到了哪几类个人信息）。
-**这一步不能跳，也不能替用户答**：
+`disclosure` 清单。清单不只是一句「题面会出境」，`disclosure.manifest` 里
+**逐字段列出**会离开本机的内容（题干 / 标准答案 / 解析 / 学生作答 / 考试名），
+外加 `limitations`（已知做不到、需人工兜底的部分，比如中文姓名要在 config 里
+显式登记才打码）。**这一步不能跳，也不能替用户答**：
 
-1. 把 `disclosure.egress` 的说明念给用户（题干 / 标准答案 / 学生作答原文
-   会发给你所使用的 AI 模型），有 PII 命中就一并如实说
+1. 先把清单念全：`disclosure.manifest` 的 `fields` 和 `limitations` **都要念**，
+   别只念 fields；有 PII 命中（`disclosure.pii_found`）一并如实说。
+   （想一次看全所有出网范围，调 `zx_consent_manifest()`。）
 2. 等用户明确表态：
-   - **同意** → 带 `disclosure_confirmed=true` 重调（返回的样题已自动
-     对高置信 PII 打码，`redaction` 字段会说明打了什么）
-   - **不同意** → 带 `stats_only=true`，只做不含题面原文的统计诊断
-     （画像聚合不含个人信息，照样能写「哪些知识点薄弱」的结论）
-3. 两种选择都会写进 `diagnosis_log` 的 `disclosure_confirmed` 列，事后可查
-4. ⚠️ 和 `user_confirmed` / `scope_confirmed` 一样：没问过用户就传
-   `disclosure_confirmed=true`，等于在审计日志里留假记录
+   - **同意（推荐持久授权）** → 调 `zx_consent(scope="analysis", granted=true)`。
+     授权对着**当前这份清单**存快照：清单不变则此后 `zx_diagnosis` 无需每次再确认；
+     清单一旦增删字段，旧授权自动失效（`manifest_stale=true`），必须重新念、重新征求。
+   - **同意（仅本次）** → 带 `disclosure_confirmed=true` 重调 `zx_diagnosis`
+     （这条也会顺带落成持久授权）。返回的样题已自动对高置信 PII 打码，
+     `redaction` 字段说明打了什么，`consent_source` 说明本次放行靠的是持久授权还是本次确认。
+   - **不同意** → 调 `zx_consent(scope="analysis", granted=false)` 记录拒绝，
+     或直接带 `stats_only=true` 只做不含题面原文的统计诊断
+     （画像聚合不含个人信息，照样能写「哪些知识点薄弱」的结论）。
+     拒绝后 `zx_diagnosis` 会一直挡在披露门禁（`consent_state=declined`），不会偷偷放行。
+3. 授权状态与每次诊断都会留痕：`zx_consent_manifest` 可查当前授权，
+   `diagnosis_log` 的 `disclosure_confirmed` 列记每次诊断是否已确认。
+4. ⚠️ 和 `user_confirmed` / `scope_confirmed` 一样：没问过用户就调
+   `zx_consent(granted=true)` 或传 `disclosure_confirmed=true`，等于在审计里留假记录。
+5. 另外两个出网范围 `vlm_ocr`（图片送视觉模型读图）、`export`（导出文件含原文）
+   目前**只告知不拦截**（清单里 `enforced=false` 已如实标明）：图片落盘前已由
+   `core/strip.py` 剥掉 EXIF/GPS，但含人像/手写姓名的图片仍需你提醒用户自行确认。
 
 ## 标准工作流
 

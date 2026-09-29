@@ -116,6 +116,19 @@ CREATE TABLE IF NOT EXISTS diagnosis_log (
     host           TEXT,
     disclosure_confirmed INTEGER NOT NULL DEFAULT 0
 );
+
+-- 出网授权（移植自 qwen 分支 privacy/disclosure.ts）：
+-- 授权是对着**某一份披露清单**给的。清单一旦改动（新增/改写字段），
+-- 旧的「同意」就不再覆盖新内容 —— manifest_json 存的是用户当初批准的那份，
+-- 读取时与当前清单逐字比对，不一致即视为未决（stale），必须重新征求同意。
+-- 这样「模型每次自己传 disclosure_confirmed=true」就升级成「用户对具体
+-- 字段清单授过一次权、且清单没变过」——授权是代码路径，不是提示词约定。
+CREATE TABLE IF NOT EXISTS consent (
+    scope         TEXT PRIMARY KEY,
+    granted       INTEGER NOT NULL DEFAULT 0,
+    manifest_json TEXT NOT NULL DEFAULT '',
+    decided_at    TEXT
+);
 """
 
 
@@ -701,6 +714,36 @@ class Store:
                                 if x]
             out.append(d)
         return out
+
+    # -- 出网授权（consent） -------------------------------------------------
+    # 这三个方法只负责**存取**，不做「清单是否变更」的判断 —— 那属于
+    # core/disclosure.py（它拿当前清单和这里存的 manifest_json 逐字比对）。
+    # 分层理由：store 不该知道清单长什么样，否则清单一改就要动存储层。
+    def get_consent_row(self, scope: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT granted, manifest_json, decided_at FROM consent WHERE scope=?",
+            (scope,)).fetchone()
+        return dict(row) if row else None
+
+    def all_consent_rows(self) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT scope, granted, manifest_json, decided_at FROM consent"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def record_consent(self, scope: str, granted: bool,
+                       manifest_json: str) -> None:
+        """写入/更新一条授权。manifest_json 是用户批准时的清单快照。"""
+        self.conn.execute(
+            """INSERT INTO consent (scope, granted, manifest_json, decided_at)
+               VALUES (?,?,?,?)
+               ON CONFLICT(scope) DO UPDATE SET
+                 granted=excluded.granted,
+                 manifest_json=excluded.manifest_json,
+                 decided_at=excluded.decided_at""",
+            (scope, 1 if granted else 0, manifest_json,
+             datetime.now(timezone.utc).isoformat()))
+        self.conn.commit()
 
     # -- 清空（真删） -------------------------------------------------------
     def purge(self, confirm: bool = False) -> dict:

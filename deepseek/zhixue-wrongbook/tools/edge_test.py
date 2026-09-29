@@ -1029,6 +1029,32 @@ def main() -> int:
     except Exception as exc:
         log("kp / verification 传 None → 不崩", False, f"{type(exc).__name__}: {exc}")
 
+    # 8) 答案隔离（Task3，移植 qwen practice/items.ts「题卡不含答案」原则）
+    _iso = {**_base, "kp": ["数学/一元二次/判别式"], "verification": [],
+            "answer": "ZZTOP_ANS", "analysis": "因为所以判别式大于零"}
+    h_key = _rp([_iso])                       # 默认 answer_layout="key"
+    log("练习卷默认 key 布局：题目区不含内联答案块（学生一打开看不到答案）",
+        'class="ans"' not in h_key, "")
+    log("key 布局把答案汇总到卷末独立答案页（page-break 另起一页）",
+        'class="answer-key"' in h_key and "page-break-before:always" in h_key
+        and "参考答案与解析" in h_key, "")
+    log("key 布局答案页里答案与解析都在（隔离不等于丢失）",
+        "ZZTOP_ANS" in h_key and "因为所以判别式大于零" in h_key, "")
+
+    h_inline = _rp([_iso], answer_layout="inline")
+    log("inline 布局：答案印在每题下方（旧行为，教师/讲评用）",
+        'class="ans"' in h_inline and "ZZTOP_ANS" in h_inline
+        and 'class="answer-key"' not in h_inline, "")
+
+    h_hidden = _rp([_iso], answer_layout="hidden")
+    log("hidden 布局：全卷不含任何答案与解析（纯学生卷）",
+        "ZZTOP_ANS" not in h_hidden and "因为所以判别式大于零" not in h_hidden
+        and 'class="ans"' not in h_hidden and 'class="answer-key"' not in h_hidden, "")
+
+    log("非法 answer_layout 回退 key（不崩、不静默变 inline 泄答案）",
+        'class="answer-key"' in _rp([_iso], answer_layout="bogus")
+        and 'class="ans"' not in _rp([_iso], answer_layout="bogus"), "")
+
     # ------------------------------------------------------------ PDF 转换器探测
     section("O. PDF 转换器探测（回归：本机装了浏览器却报「未检测到」）")
     # 回归背景（2026-09-24 真实导出时暴露）：try_pdf 原来只用
@@ -1579,6 +1605,125 @@ def main() -> int:
     _mig.close()
     tstore.close()
 
+    # ------------------------------------------------------------------ U
+    section("U. 图片元数据剥离（回归：EXIF/GPS 随图片出网，deepseek 侧此前零处理）")
+    from core.strip import strip_bytes, sniff_format
+
+    # JPEG：APP1(Exif) 与 COM 该剥，APP0(JFIF) 与扫描数据该原样保留
+    jpg = _jpeg_with_exif()
+    rj = strip_bytes(jpg)
+    log("带 EXIF 的 JPEG 判为 stripped", rj.support == "stripped", f"support={rj.support}")
+    log("JPEG 剥掉了 APP1(exif) 与 COM 两段",
+        "APP1(exif/xmp)" in rj.removed and "COM" in rj.removed, str(rj.removed))
+    log("JPEG 里的 GPS/EXIF 原文确实不在了",
+        b"GPSLatitude" not in rj.out and b"secret-comment" not in rj.out, "")
+    log("JPEG 的 JFIF 段与扫描数据被保留（没重新编码、没损坏）",
+        b"JFIF" in rj.out and b"\x11\x22\x33\x44" in rj.out and rj.out.endswith(b"\xff\xd9"),
+        f"out_bytes={len(rj.out)} / original={rj.original_bytes}")
+
+    # PNG：tEXt 该剥，IHDR/IDAT/IEND 该留
+    png = _png_with_text()
+    rp = strip_bytes(png)
+    log("带 tEXt 的 PNG 判为 stripped", rp.support == "stripped", f"support={rp.support}")
+    log("PNG 剥掉了 tEXt 块", rp.removed == ["tEXt"], str(rp.removed))
+    log("PNG 里的手写作者字段不在了，IEND 仍在",
+        b"student-name" not in rp.out and b"IEND" in rp.out, "")
+
+    # 结构走不通 → 不产坏副本，原样返回，如实标 malformed
+    bad = strip_bytes(_png_malformed())
+    log("截断/越界的 PNG 判为 malformed 且原样返回（不产坏文件）",
+        bad.support == "malformed" and bad.out == _png_malformed(), f"support={bad.support}")
+
+    # 干净图片 → clean，字节不变（不误伤）
+    clean = strip_bytes(_jpeg_clean())
+    log("无元数据的 JPEG 判为 clean 且字节不变",
+        clean.support == "clean" and clean.out == _jpeg_clean() and clean.removed == [],
+        f"support={clean.support}")
+
+    # PDF 只检测不改写
+    pdf = strip_bytes(_pdf_with_author())
+    log("PDF 检测到 Author/Producer 但判为 detected_not_stripped（不改写）",
+        pdf.support == "detected_not_stripped"
+        and {"Author", "Producer"} <= set(pdf.removed), str(pdf.removed))
+
+    # 未知格式（webp/gif）原样返回，不假装剥过
+    unk = strip_bytes(b"GIF89a\x01\x00\x01\x00\x00\x00\x00;")
+    log("未知格式判为 unknown_format 且原样返回",
+        unk.support == "unknown_format" and unk.format == "unknown", f"support={unk.support}")
+    log("sniff_format 认得 jpeg/png/pdf、其余归 unknown",
+        (sniff_format(jpg) == "jpeg" and sniff_format(png) == "png"
+         and sniff_format(b"%PDF-1.4") == "pdf"
+         and sniff_format(b"GIF89a") == "unknown"), "")
+
+    # 集成：download_images 落盘前真的剥了（file:// 路径，全程离线）
+    from adapters.parsers.normalize import download_images
+    exif_src = TMP / "u_exif_src.jpg"
+    exif_src.write_bytes(jpg)
+    dest = TMP / "u_strip_dest"
+    ok_u, failed_u = download_images([exif_src.as_uri()], dest, "u")
+    written = (dest / ok_u[0]).read_bytes() if ok_u else b""
+    log("download_images 落盘的 JPEG 已剥掉 EXIF（集成验证）",
+        bool(ok_u) and not failed_u and b"GPSLatitude" not in written and b"JFIF" in written,
+        f"ok={ok_u} failed={failed_u}")
+
+    # ------------------------------------------------------------------ V
+    section("V. 出网披露清单 + 持久授权（回归：授权无状态、清单不逐字段、改清单不失效）")
+    from core.disclosure import (MANIFESTS, SCOPES, consent_summary,
+                                 get_consent, manifest_text, record_consent,
+                                 require_consent)
+
+    cstore = Store(TMP / "consent.db", TMP / "images_consent")
+    log("清单规范化 JSON 稳定（同清单同串，字段顺序无关）",
+        manifest_text("analysis") == manifest_text("analysis")
+        and isinstance(manifest_text("analysis"), str), "")
+    log("analysis 逐字段清单含题干/标准答案/学生作答，且标为 enforced",
+        MANIFESTS["analysis"]["enforced"] is True
+        and any("stem_text" in f["field"] for f in MANIFESTS["analysis"]["fields"])
+        and any("student_answer" in f["field"] for f in MANIFESTS["analysis"]["fields"]),
+        str([f["field"] for f in MANIFESTS["analysis"]["fields"]]))
+    log("vlm_ocr / export 如实标为 enforced=false（只告知不拦截，不假装是门禁）",
+        MANIFESTS["vlm_ocr"]["enforced"] is False
+        and MANIFESTS["export"]["enforced"] is False, "")
+    log("每个清单都写了 limitations 与 on_decline（不藏 limitation）",
+        all(m["limitations"] and m["on_decline"] for m in MANIFESTS.values()), "")
+
+    # 初始未决
+    st0 = get_consent(cstore, "analysis")
+    req0 = require_consent(cstore, "analysis")
+    log("未授权时 get_consent=未决、require_consent 阻断并回清单",
+        st0["granted"] is False and st0["decided_at"] is None
+        and req0["ok"] is False and req0["state"] == "undecided"
+        and req0["manifest"]["scope"] == "analysis"
+        and req0["error_code"] == "disclosure_not_confirmed", str(req0.get("state")))
+
+    # 授权后放行
+    record_consent(cstore, "analysis", True)
+    st1 = get_consent(cstore, "analysis")
+    log("zx_consent 授权后 get_consent=granted、require_consent 放行",
+        st1["granted"] is True and st1["decided_at"]
+        and require_consent(cstore, "analysis")["ok"] is True, "")
+
+    # 清单变更即失效：篡改存下来的清单快照，模拟「清单加了字段」
+    cstore.conn.execute("UPDATE consent SET manifest_json=? WHERE scope=?",
+                        ('{"tampered": true}', "analysis"))
+    cstore.conn.commit()
+    st2 = get_consent(cstore, "analysis")
+    req2 = require_consent(cstore, "analysis")
+    log("清单变更后旧授权自动失效（manifest_stale=true、重新阻断）",
+        st2["granted"] is False and st2["manifest_stale"] is True
+        and req2["ok"] is False and req2["state"] == "stale", str(req2.get("state")))
+
+    # 拒绝 → declined，不是 undecided
+    record_consent(cstore, "analysis", False)
+    req3 = require_consent(cstore, "analysis")
+    log("用户拒绝后 state=declined，suggested_action 指向 on_decline 降级",
+        req3["ok"] is False and req3["state"] == "declined"
+        and any("on_decline" in a for a in req3["suggested_action"]), str(req3.get("state")))
+
+    log("consent_summary 覆盖全部 scope",
+        {c["scope"] for c in consent_summary(cstore)} == set(SCOPES), str(SCOPES))
+    cstore.close()
+
     # ------------------------------------------------------------------ 收尾
     store.close()
     s = Store(TMP / "edge.db", TMP / "images")
@@ -1637,6 +1782,61 @@ def _build_minimal_pdf(lines: list[str], draw_only: bool = False) -> bytes:
     out += (f"trailer\n<< /Size {n} /Root 1 0 R >>\nstartxref\n{xref_pos}\n"
             f"%%EOF\n").encode()
     return bytes(out)
+
+
+# ---------------------------------------------------------------------------
+# U 段的字节构造器：手搓带/不带元数据的 jpeg/png/pdf，全程离线、不依赖真图。
+# ---------------------------------------------------------------------------
+def _jpeg_seg(marker: int, payload: bytes) -> bytes:
+    """一个 JPEG 段：FF <marker> <len(含自身2字节,不含FF marker)> <payload>。"""
+    length = len(payload) + 2
+    return bytes([0xFF, marker, (length >> 8) & 0xFF, length & 0xFF]) + payload
+
+
+def _jpeg_with_exif() -> bytes:
+    """SOI + APP0(JFIF,留) + APP1(Exif,剥) + COM(注释,剥) + SOS + 扫描数据 + EOI。"""
+    return (b"\xff\xd8"
+            + _jpeg_seg(0xE0, b"JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00")
+            + _jpeg_seg(0xE1, b"Exif\x00\x00MM\x00*GPSLatitude=31.23")
+            + _jpeg_seg(0xFE, b"secret-comment")
+            + _jpeg_seg(0xDA, b"\x03\x01\x00\x02\x11\x03\x11\x00\x3f\x00")
+            + b"\x11\x22\x33\x44"
+            + b"\xff\xd9")
+
+
+def _jpeg_clean() -> bytes:
+    """无 EXIF/COM 的干净 JPEG：SOI + APP0(JFIF) + SOS + 扫描数据 + EOI。"""
+    return (b"\xff\xd8"
+            + _jpeg_seg(0xE0, b"JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00")
+            + _jpeg_seg(0xDA, b"\x03\x01\x00\x02\x11\x03\x11\x00\x3f\x00")
+            + b"\x11\x22\x33\x44"
+            + b"\xff\xd9")
+
+
+def _png_chunk(ctype: bytes, data: bytes) -> bytes:
+    import zlib
+    crc = zlib.crc32(ctype + data) & 0xFFFFFFFF
+    return (len(data).to_bytes(4, "big") + ctype + data
+            + crc.to_bytes(4, "big"))
+
+
+def _png_with_text() -> bytes:
+    """签名 + IHDR + tEXt(剥) + IDAT + IEND。"""
+    return (b"\x89PNG\r\n\x1a\n"
+            + _png_chunk(b"IHDR", b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00")
+            + _png_chunk(b"tEXt", b"Author\x00student-name")
+            + _png_chunk(b"IDAT", b"\x78\x9c\x63\x60\x00\x00\x00\x00\x00\x00")
+            + _png_chunk(b"IEND", b""))
+
+
+def _png_malformed() -> bytes:
+    """签名 + 一个声明块长 999 但字节根本不够的块 → 重建越界、走不通。"""
+    return b"\x89PNG\r\n\x1a\n" + (999).to_bytes(4, "big") + b"tEXt" + b"xx"
+
+
+def _pdf_with_author() -> bytes:
+    return (b"%PDF-1.4\n1 0 obj\n<< /Author (student) /Producer (scanner) >>\n"
+            b"endobj\n%%EOF\n")
 
 
 if __name__ == "__main__":

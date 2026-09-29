@@ -18,6 +18,7 @@ from pathlib import Path
 
 from core.models import (AnswerPart, Exam, QuestionPart, Score, WrongQuestion,
                          html_to_text)
+from core.strip import strip_bytes
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -198,7 +199,10 @@ def download_images(urls: list[str], dest_dir: Path, prefix: str,
             # 二是数据要自包含，原文件被移走后题库就瞎了。
             try:
                 src = _file_url_to_path(url)
-                data = src.read_bytes()
+                # 落盘前剥掉 EXIF/GPS（core/strip.py）：图片会被交给宿主模型
+                # 读图（出网），夹带的拍摄设备/经纬度不该跟着走。剥不动就
+                # 原样保留（strip_bytes 已保证 out 可用），绝不产坏文件。
+                data = strip_bytes(src.read_bytes()).out
                 name = f"{prefix}_{i:02d}{src.suffix or '.png'}"
                 (dest_dir / name).write_bytes(data)
                 ok.append(name)
@@ -222,7 +226,7 @@ def download_images(urls: list[str], dest_dir: Path, prefix: str,
                 if m:
                     ext = "." + m.group(1).lower().replace("jpeg", "jpg")
             name = f"{prefix}_{i:02d}{ext}"
-            (dest_dir / name).write_bytes(r.content)
+            (dest_dir / name).write_bytes(strip_bytes(r.content).out)
             ok.append(name)
         except Exception:
             failed.append(url)

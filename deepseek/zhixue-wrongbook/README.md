@@ -73,11 +73,11 @@ python -m venv .venv
 
 ```bash
 .venv/Scripts/python tools/acceptance.py     # 主干全链路，94 项
-.venv/Scripts/python tools/edge_test.py      # 补测边界路径，179 项
-.venv/Scripts/python tools/mcp_e2e.py        # 走真实 MCP 协议，59 项
+.venv/Scripts/python tools/edge_test.py      # 补测边界路径，207 项
+.venv/Scripts/python tools/mcp_e2e.py        # 走真实 MCP 协议，71 项
 ```
 
-三套合计 **332 项检查**。其中 `edge_test.py` 专门覆盖主干验收走不到的路径：
+三套合计 **372 项检查**。其中 `edge_test.py` 专门覆盖主干验收走不到的路径：
 通道 B 的写入链路 `sync()`（用假对象离线跑，含 40217 重试）、
 .docx/.pdf 解析、DPAPI 降级、老库迁移、xlsx 优雅失败，
 以及 **P/Q/R/S 四节回归**（派生字段覆盖规则、参数形状、会话三态、路径解析）。

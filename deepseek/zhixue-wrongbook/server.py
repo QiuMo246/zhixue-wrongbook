@@ -1171,22 +1171,48 @@ def zx_diagnosis(subject: str = "", user_confirmed: bool = False,
                          "题面原文未出境。需要逐题分析时再谈披露确认。"),
             })
 
-        if not disclosure_confirmed:
+        # ---- Task2（移植 qwen disclosure.ts）：逐字段清单 + 持久授权 --------
+        # 授权可来自两处：本次 disclosure_confirmed=true（旧路径，保留兼容），
+        # 或此前用户对**当前这份清单**授过权且清单未变（新路径，持久）。
+        from core.disclosure import (MANIFESTS, get_consent,   # noqa: E402
+                                     record_consent, require_consent)
+        consent_state = get_consent(store, "analysis")
+        consent_granted = consent_state["granted"]
+        # 披露清单升级为逐字段：附加 manifest / consent 键，egress 原样保留
+        # （既有测试与文档依赖 "egress" in disclosure，不做替换只做增补）。
+        disclosure["manifest"] = MANIFESTS["analysis"]
+        disclosure["consent"] = consent_state
+
+        if not (disclosure_confirmed or consent_granted):
+            req = require_consent(store, "analysis")
             return _json({
                 "ok": False,
                 "disclosure_required": True,
+                "consent_state": req.get("state"),
                 "subject": subject,
                 "scope": prof["scope"],
                 "disclosure": disclosure,
                 "ask_user": (
                     "出数据前需要用户确认：这次诊断会把选定范围内错题的"
                     "题干、标准答案、学生作答原文发给你所使用的 AI 模型。"
-                    "把上面 disclosure 里的说明念给用户，等明确同意后带 "
-                    "disclosure_confirmed=true 重调；用户不同意就带 "
-                    "stats_only=true，只做不含原文的统计诊断。不要替用户选。"),
+                    "把上面 disclosure.manifest 的 fields / limitations 逐条念给用户，"
+                    "取得明确同意后二选一：① 带 disclosure_confirmed=true 重调（仅本次）；"
+                    "② 调 zx_consent(scope=\"analysis\", granted=true) 持久授权"
+                    "（清单不变则后续无需再确认）。用户不同意就带 stats_only=true，"
+                    "只做不含原文的统计诊断。不要替用户选。"),
                 "profile": prof,
                 "review_queue": _scoped_review_queue(store, subject, rng),
             })
+
+        # 放行来源：靠本次布尔过的、且此前无持久授权 → 落成持久授权（对着当前
+        # 清单快照；清单一旦改动，get_consent 的 manifest_stale 会让它自动失效）。
+        if disclosure_confirmed and not consent_granted:
+            record_consent(store, "analysis", True)
+            consent_source = "call_param（已落成持久授权，清单变更即失效）"
+        elif consent_granted and not disclosure_confirmed:
+            consent_source = "persisted（此前已对当前清单授权）"
+        else:
+            consent_source = "call_param + persisted"
 
         redacted_samples = redact_payload(samples, names=names)
         audit_id = store.log_diagnosis(
@@ -1200,6 +1226,7 @@ def zx_diagnosis(subject: str = "", user_confirmed: bool = False,
         return _json({
             "ok": True,
             "audit_id": audit_id,
+            "consent_source": consent_source,
             "subject": subject,
             "scope": prof["scope"],
             "profile": prof,
@@ -1256,6 +1283,66 @@ def zx_diagnosis_log(limit: int = 20) -> str:
 
 
 # ===========================================================================
+# 出网授权（Task2，移植自 qwen 分支 privacy/disclosure.ts）
+# ===========================================================================
+@mcp.tool(description="列出各出网范围的**逐字段披露清单**与当前授权状态。"
+                      "首次分析 / 首次读图前，先把对应 scope 的 fields 与 limitations "
+                      "原样念给用户，再据其决定调 zx_consent 记录授权。"
+                      "scope 取 analysis（样题原文送模型，zx_diagnosis 处强制）/"
+                      "vlm_ocr（图片送视觉模型）/export（导出文件含原文）；"
+                      "不传 scope 则返回全部。enforced=false 的 scope 只告知不拦截，"
+                      "清单里已如实标明。manifest_stale=true 表示清单已变、旧授权失效。")
+@_guard
+def zx_consent_manifest(scope: str = "") -> str:
+    from core.disclosure import MANIFESTS, SCOPES, consent_summary, get_consent
+    store = _store()
+    try:
+        if scope:
+            if scope not in MANIFESTS:
+                return _json({"ok": False,
+                              "error": f"没有名为「{scope}」的出网范围。",
+                              "scopes": SCOPES})
+            states = [get_consent(store, scope)]
+            manifests = {scope: MANIFESTS[scope]}
+        else:
+            states = consent_summary(store)
+            manifests = dict(MANIFESTS)
+    finally:
+        store.close()
+    return _json({
+        "ok": True, "scopes": SCOPES, "consent": states, "manifests": manifests,
+        "note": ("fields 是「会离开本机的内容」逐条清单，limitations 是「已知做不到、"
+                 "需人工兜底」的部分 —— 念给用户时两者都要念，别只念 fields。"
+                 "授权对着某一份清单给：清单改了 manifest_stale 会变 true，需重新征求。"),
+    })
+
+
+@mcp.tool(description="记录用户对某个出网范围的授权决定（持久，直到清单变更或用户改主意）。"
+                      "**必须在把 zx_consent_manifest 的清单念给用户、拿到明确是/否之后才调**，"
+                      "不要替用户选。scope 取 analysis/vlm_ocr/export；granted=true 同意、"
+                      "false 拒绝（拒绝后对应能力按清单的 on_decline 降级，如 analysis→仅统计）。")
+@_guard
+def zx_consent(scope: str, granted: bool) -> str:
+    from core.disclosure import MANIFESTS, SCOPES, record_consent
+    if scope not in MANIFESTS:
+        return _json({"ok": False, "error": f"没有名为「{scope}」的出网范围。",
+                      "scopes": SCOPES})
+    store = _store()
+    try:
+        state = record_consent(store, scope, bool(granted))
+    finally:
+        store.close()
+    return _json({
+        "ok": True, "recorded": state,
+        "effect": (MANIFESTS[scope]["on_decline"] if not granted
+                   else f"{scope} 出网已授权：清单不变则后续无需再逐次确认。"),
+        "note": ("这是对**当前这份清单**的授权快照。日后清单增删字段，"
+                 "get_consent 会判 manifest_stale=true 让本次授权自动失效，"
+                 "必须重新出示新清单征求同意。"),
+    })
+
+
+# ===========================================================================
 # 统计与导出
 # ===========================================================================
 @mcp.tool(description="列出需要人工复核的题：分析标记 needs_review，或解析/分析置信度偏低。")
@@ -1279,11 +1366,16 @@ def zx_review_queue() -> str:
                       "knowledge_points（或 kp）可传数组，也可传「|」分隔字符串；"
                       "verification 可传 check_practice 的 checks 数组，"
                       "也可直接传 submit_solution 的 verdict 字符串"
-                      "（match/numeric_match/mismatch/undecidable）。")
+                      "（match/numeric_match/mismatch/undecidable）。"
+                      "answer_layout 控制答案摆放（默认 key）："
+                      "key=题目区不含答案、答案与解析汇总到卷末独立答案页"
+                      "（打印另起一页，学生可先做后对）；"
+                      "inline=答案印在每题下方（教师/讲评用，学生一打开即见）；"
+                      "hidden=全卷不含答案（纯学生卷）。")
 @_guard
 def zx_export_paper(items: str | list[dict], title: str = "错题同类练习卷",
                     out_path: str = "", want_pdf: bool = False,
-                    fmt: str = "") -> str:
+                    fmt: str = "", answer_layout: str = "key") -> str:
     # 兼容别名（2026-09-25 新增）：兄弟工具 zx_export_wrongbook 用的是 `fmt`，
     # 宿主很容易把那个习惯顺手套到这里。与其让它撞上「不认识的参数」，
     # 不如认下这个写法 —— 两个工具的参数名不一致本身就是个坑，
@@ -1297,6 +1389,12 @@ def zx_export_paper(items: str | list[dict], title: str = "错题同类练习卷
         else:
             return _json({"ok": False,
                           "error": f"不支持的 fmt：{fmt}（本工具可选 html / pdf）"})
+    # 答案隔离（Task3）：默认 key —— 学生卷不该把答案印在每题下方。
+    al = (answer_layout or "key").strip().lower()
+    if al not in ("key", "inline", "hidden"):
+        return _json({"ok": False,
+                      "error": (f"不支持的 answer_layout：{answer_layout}"
+                                "（可选 key / inline / hidden）")})
     try:
         data = json.loads(items) if isinstance(items, str) else items
     except ValueError as exc:
@@ -1320,10 +1418,17 @@ def zx_export_paper(items: str | list[dict], title: str = "错题同类练习卷
                           "或把没验证过的条目 verified 改为 false（卷面会标"
                           "「校验未通过，需人工确认」）"]})
     try:
-        path = write_paper(data, out_path or None, title=title)
+        path = write_paper(data, out_path or None, title=title, answer_layout=al)
     except Exception as exc:
         return _json({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
-    out = {"ok": True, "html": path, "count": len(data)}
+    out = {"ok": True, "html": path, "count": len(data), "answer_layout": al,
+           "answer_note": {
+               "key": ("答案与解析已隔离到卷末「参考答案与解析」页（打印另起一页）；"
+                       "题目区不含答案，学生可先做后对。"),
+               "hidden": "全卷不含答案（纯学生卷）；答案与解析由出题方另行保管。",
+               "inline": ("答案与解析印在每题下方（教师/讲评用）——"
+                          "学生一打开即可见答案，不适合当练习卷直接发给学生。"),
+           }[al]}
     if want_pdf:
         conv = try_pdf(path)
         out["pdf"] = conv

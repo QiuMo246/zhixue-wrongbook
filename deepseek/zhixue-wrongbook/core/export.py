@@ -249,15 +249,30 @@ def _verification_marks(v: Any) -> list[str]:
 
 
 def render_paper(items: list[dict], title: str = "错题同类练习卷",
-                 meta: str = "", footer: str = "") -> str:
+                 meta: str = "", footer: str = "",
+                 answer_layout: str = "key") -> str:
     """items: 每项 {gen_id, subject, kp(list), difficulty, qtype, stem_html,
                       answer, analysis, verified, verification(list[dict]),
                       source_topic(str), attempts(int)}
 
     kp 与 verification 都走归一化，接受「| 分隔字符串 / JSON 数组 / 单值」，
     免得宿主按别的工具的约定传值时被静默拆字或直接崩掉（见 _as_list 的注释）。
+
+    answer_layout（Task3，移植 qwen practice/items.ts 的「答案隔离」原则）：
+    学生面对的练习卷，默认不该把答案印在每题正下方 —— 一打开就看见答案，
+    这份卷子作为练习就废了。qwen 的做法是题卡（cardOf）永不含 answer/analysis，
+    只有 zx_answer_reveal 显式调用才给；deepseek 侧是宿主自己出题（写题时就
+    知道答案），reveal 工具是空壳，所以把隔离落在**导出产物**上：
+      * "key"（默认）—— 题目区不含答案；答案与解析汇总到卷末独立的
+        「参考答案与解析」页（内联 page-break，打印另起一页，可裁下单独保管）。
+      * "inline"     —— 旧行为：答案与解析直接印在每题下方（教师/讲评用）。
+      * "hidden"     —— 全卷不含任何答案（纯学生卷），答案由持有者另行保管。
     """
+    layout = (answer_layout or "key").strip().lower()
+    if layout not in ("key", "inline", "hidden"):
+        layout = "key"
     blocks = []
+    key_rows: list[tuple[int, dict]] = []
     for i, it in enumerate(items, 1):
         vmarks = _verification_marks(it.get("verification"))
         verified = it.get("verified")
@@ -266,33 +281,75 @@ def render_paper(items: list[dict], title: str = "错题同类练习卷",
                       'color:#82071e">校验未通过，需人工确认</span>')
         kp_text = "、".join(str(x) for x in
                            _as_list(it.get("kp") or it.get("knowledge_points")))
+        # 答案隔离：只有 inline 布局才把答案印在题目下方；key 收集到卷末，
+        # hidden 完全不渲染。
+        ans_block = ""
+        if layout == "inline":
+            ans_block = (
+                '  <div class="ans"><b>参考答案：</b>'
+                f'{html.escape(str(it.get("answer", "")))}<br>\n'
+                '    <b>解析：</b>'
+                f'{html.escape(str(it.get("analysis", "")))}</div>\n')
+        elif layout == "key":
+            key_rows.append((i, it))
         blocks.append(f"""<div class="q">
   <div class="qh"><span>第 {i} 题 · {html.escape(str(it.get('qtype', '')))}</span>
     <span>{html.escape(str(it.get('subject', '')))} · 难度 {html.escape(str(it.get('difficulty', '-')))}</span></div>
   <div class="stem">{sanitize_html(it.get('stem_html', ''))}{badge}</div>
   <div class="tags">知识点：{html.escape(kp_text)}
     　|　改写自：{html.escape(str(it.get('source_topic', '-')))}</div>
-  <div class="ans"><b>参考答案：</b>{html.escape(str(it.get('answer', '')))}<br>
-    <b>解析：</b>{html.escape(str(it.get('analysis', '')))}</div>
-  <div class="tags">校验：{'　'.join(vmarks) if vmarks else '未校验'}
+{ans_block}  <div class="tags">校验：{'　'.join(vmarks) if vmarks else '未校验'}
     　|　重做次数：{it.get('attempts', 1)}</div>
 </div>""")
     body = "\n".join(blocks) if blocks else "<p>（空卷）</p>"
+
+    # 卷末独立答案页（key 布局）：用内联 page-break 而非模板 CSS 类 ——
+    # 用户即使换了自定义模板（templates/paper.html）也照样另起一页。
+    if layout == "key" and key_rows:
+        lis = []
+        for i, it in key_rows:
+            lis.append(
+                f'<li style="margin-bottom:10px"><b>第 {i} 题</b>　参考答案：'
+                f'{html.escape(str(it.get("answer", "")))}'
+                f'<br><span style="color:#57606a">解析：'
+                f'{html.escape(str(it.get("analysis", "")))}</span></li>')
+        body += (
+            '\n<div class="answer-key" style="page-break-before:always;'
+            'margin-top:36px;border-top:2px solid #1f2328;padding-top:16px">\n'
+            '<h2 style="font-size:18px;margin:0 0 8px">参考答案与解析</h2>\n'
+            '<p style="color:#6a737d;font-size:13px;margin:0 0 12px">'
+            '先做完再对答案。本页打印时另起一页，可裁下由家长/老师单独保管。</p>\n'
+            '<ol style="list-style:none;padding-left:0;line-height:1.9;margin:0">\n'
+            + "\n".join(lis) + '\n</ol>\n</div>')
+
+    if footer:
+        footer_text = footer
+    elif layout == "inline":
+        footer_text = ("本卷题目由 AI 依据本地错题库检索改写生成，"
+                       "每道题均附答案与解析，并标注了确定性校验结果。"
+                       "校验未通过的题请勿直接使用。")
+    elif layout == "hidden":
+        footer_text = ("本卷题目由 AI 依据本地错题库检索改写生成，不含答案"
+                       "（纯练习卷）；答案与解析由出题方另行保管。"
+                       "卷面标注了确定性校验结果，校验未通过的题请勿直接使用。")
+    else:  # key
+        footer_text = ("本卷题目由 AI 依据本地错题库检索改写生成，答案与解析"
+                       "汇总在卷末「参考答案与解析」页（打印另起一页）。"
+                       "卷面标注了确定性校验结果，校验未通过的题请勿直接使用。")
     html_out = (_load_template()
                 .replace("{{TITLE}}", html.escape(title))
                 .replace("{{META}}", html.escape(meta) or
                          f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}")
                 .replace("{{BODY}}", body)
-                .replace("{{FOOTER}}", html.escape(footer) or
-                         "本卷题目由 AI 依据本地错题库检索改写生成，"
-                         "每道题均附答案与解析，并标注了确定性校验结果。"
-                         "校验未通过的题请勿直接使用。"))
+                .replace("{{FOOTER}}", html.escape(footer_text)))
     return html_out
 
 
 def write_paper(items: list[dict], out_path: str | Path | None = None,
-                title: str = "错题同类练习卷", meta: str = "") -> str:
-    html_out = render_paper(items, title=title, meta=meta)
+                title: str = "错题同类练习卷", meta: str = "",
+                answer_layout: str = "key") -> str:
+    html_out = render_paper(items, title=title, meta=meta,
+                            answer_layout=answer_layout)
     if out_path is None:
         OUT_DIR.mkdir(parents=True, exist_ok=True)
         out_path = OUT_DIR / f"paper_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
