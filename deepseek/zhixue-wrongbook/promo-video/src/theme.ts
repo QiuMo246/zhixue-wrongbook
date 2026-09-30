@@ -22,10 +22,10 @@ export const VIDEO = {
   width: 1920,
   height: 1080,
   fps: 30,
-  durationInFrames: 2070,
+  durationInFrames: 2190,
 };
 
-// 每个分镜的起始帧（fps=30，总计 69s / 2070 帧）
+// 每个分镜的起始帧（fps=30，总计 73s / 2190 帧）
 export const SCENES = {
   hook: { from: 0, duration: 270 },
   intro: { from: 270, duration: 180 },
@@ -37,4 +37,5 @@ export const SCENES = {
   numbers: { from: 1530, duration: 210 },
   privacy: { from: 1740, duration: 150 },
   cta: { from: 1890, duration: 180 },
+  end: { from: 2070, duration: 120 },
 };

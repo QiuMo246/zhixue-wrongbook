@@ -12,6 +12,7 @@ import { Scene6Grade } from './scenes/Scene6Grade';
 import { Scene7Numbers } from './scenes/Scene7Numbers';
 import { Scene8Privacy } from './scenes/Scene8Privacy';
 import { Scene9CTA } from './scenes/Scene9CTA';
+import { Scene10End } from './scenes/Scene10End';
 
 const Scene: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center' }}>{children}</AbsoluteFill>
@@ -31,19 +32,22 @@ export const Promo: React.FC = () => {
       <Scene><Sequence from={SCENES.numbers.from} durationInFrames={SCENES.numbers.duration}><Scene7Numbers /></Sequence></Scene>
       <Scene><Sequence from={SCENES.privacy.from} durationInFrames={SCENES.privacy.duration}><Scene8Privacy /></Sequence></Scene>
       <Scene><Sequence from={SCENES.cta.from} durationInFrames={SCENES.cta.duration}><Scene9CTA /></Sequence></Scene>
+      <Scene><Sequence from={SCENES.end.from} durationInFrames={SCENES.end.duration}><Scene10End /></Sequence></Scene>
     </AbsoluteFill>
   );
 };
 
 export const RemotionRoot: React.FC = () => {
   return (
-    <Composition
-      id="Promo"
-      component={Promo}
-      width={VIDEO.width}
-      height={VIDEO.height}
-      fps={VIDEO.fps}
-      durationInFrames={VIDEO.durationInFrames}
-    />
+    <>
+      <Composition
+        id="Promo"
+        component={Promo}
+        width={VIDEO.width}
+        height={VIDEO.height}
+        fps={VIDEO.fps}
+        durationInFrames={VIDEO.durationInFrames}
+      />
+    </>
   );
 };
