@@ -13,6 +13,7 @@ import { Scene7Numbers } from './scenes/Scene7Numbers';
 import { Scene8Privacy } from './scenes/Scene8Privacy';
 import { Scene9CTA } from './scenes/Scene9CTA';
 import { Scene10End } from './scenes/Scene10End';
+import { AudioTrack } from './components/AudioTrack';
 
 const Scene: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center' }}>{children}</AbsoluteFill>
@@ -22,6 +23,7 @@ export const Promo: React.FC = () => {
   return (
     <AbsoluteFill>
       <NotebookBackground />
+      <AudioTrack />
       <Scene><Sequence from={SCENES.hook.from} durationInFrames={SCENES.hook.duration}><Scene0Hook /></Sequence></Scene>
       <Scene><Sequence from={SCENES.intro.from} durationInFrames={SCENES.intro.duration}><Scene1Intro /></Sequence></Scene>
       <Scene><Sequence from={SCENES.title.from} durationInFrames={SCENES.title.duration}><Scene2Title /></Sequence></Scene>

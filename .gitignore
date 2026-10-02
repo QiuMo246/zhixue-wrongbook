@@ -1,7 +1,3 @@
-# WorkBuddy 的运行态目录，不是项目内容。
-# 之前有一次切分支自动检查点把这类文件连着项目文件一起提交进了别的分支，
-# 显式忽略以免复发。
-.workbuddy-ai/
 .DS_Store
 Thumbs.db
 
@@ -21,4 +17,29 @@ web/dist/
 # 设计工作台产物（impeccable 开发用上下文，非项目内容）
 PRODUCT.md
 .impeccable-brief.md
+.playwright-mcp/
+
+# ===== 以下为原 deepseek/.gitignore 规则（文件夹并入根目录后合并）=====
+# ===== 本地数据与隐私（绝不入库）=====
+# 真实错题库、抓取的图片、导出的报告 —— 全是真实学生数据
+zhixue-wrongbook/data/wrongbook.db*
+zhixue-wrongbook/data/wrongbook.bak*.db
+zhixue-wrongbook/data/images/
+zhixue-wrongbook/data/.session*
+zhixue-wrongbook/data/.password*
+zhixue-wrongbook/data/zx_*/
+zhixue-wrongbook/data/.browser_profile/
+zhixue-wrongbook/data/.browser-cdp/
+zhixue-wrongbook/out/
+zhixue-wrongbook/data/homework_report.json
+
+# ===== 运行产物 =====
+__pycache__/
+*.pyc
+.venv/
+.playwright-mcp/
+report_top.png
+*.log
+
+# ===== 编辑器/工具 =====
 .playwright-mcp/
