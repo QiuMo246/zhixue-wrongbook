@@ -4,24 +4,25 @@
 
 **项目介绍与功能展示**：https://qiumo-zxw.pages.dev
 
-**代码在 [`deepseek/zhixue-wrongbook/`](deepseek/zhixue-wrongbook/) 目录里**，
+**代码在 [`zhixue-wrongbook/`](zhixue-wrongbook/) 目录里**，
 安装方法、隐私声明、三条取数通道和「已知局限」都在那份
-[完整的 README](deepseek/zhixue-wrongbook/README.md) 里。
+[完整的 README](zhixue-wrongbook/README.md) 里。
 
 ## 最快安装方式（推荐）
 
 把下面这段话发给你的 AI 助手，剩下的它替你完成：
 
 > 帮我安装智学网错题助手：从 Gitee 克隆 https://gitee.com/qiu_moRs/zhixue-wrongbook 到本地，
-> 阅读 deepseek/zhixue-wrongbook/README.md 并按其中的「学生最懒安装法」完成安装和配置。
+> 阅读 zhixue-wrongbook/README.md 并按其中的「学生最懒安装法」完成安装和配置。
 
 ## 仓库结构
 
 ```
-deepseek/zhixue-wrongbook/   # 全部代码、测试、文档都在这里
-├─ server.py                 # MCP Server 入口（27 个工具）
-├─ adapters/                 # 三条取数通道
-├─ core/                     # 校验闸门、画像、导出
-├─ tools/                    # 332 项离线检查脚本
-└─ web/                      # 宣传网页（https://qiumo-zxw.pages.dev）
+zhixue-wrongbook/   # 全部代码、测试、文档都在这里
+├─ server.py        # MCP Server 入口（27 个工具）
+├─ adapters/        # 三条取数通道
+├─ core/            # 校验闸门、画像、导出
+├─ tools/           # 332 项离线检查脚本
+└─ web/             # 宣传网页（https://qiumo-zxw.pages.dev）
+docs/               # 任务书、架构设计、审计清单、历史规划与日志
 ```

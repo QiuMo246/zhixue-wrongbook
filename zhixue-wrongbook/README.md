@@ -2,7 +2,7 @@
 
 把智学网里的错题自动拉出来 → 分析每道题错在哪 → 标注知识点 → 找出你最弱的地方 → 出同类题给你练 → 做完自动批改。
 
-按 `../智学网错题助手-架构设计.md`（v2）实现。
+按 `../docs/架构设计.md`（v2）实现。
 
 ---
 
@@ -36,11 +36,11 @@
 ### 0. 学生最懒安装法（推荐）：把下面这段话发给你的 AI 助手
 
 > 帮我安装智学网错题助手：从 Gitee 克隆 https://gitee.com/qiu_moRs/zhixue-wrongbook 到本地（GitHub 地址 https://github.com/QiuMo246/zhixue-wrongbook 作为后备），运行仓库里的
-> `deepseek/install.py --config`（它会自动定位真正的项目目录）。
+> `install.py --config`（它会自动定位真正的项目目录）。
 > 装好后重启 MCP 连接。
 >
 > 然后帮我录入智学网账号密码：在终端里运行
-> `deepseek/zhixue-wrongbook/tools/setup_account.py`，让我自己输入账号和密码
+> `zhixue-wrongbook/tools/setup_account.py`，让我自己输入账号和密码
 > （密码输入时屏幕不显示，也不会留在命令行历史里 ——
 > 所以**不要**让我把密码发在对话里或写在命令行参数里）。
 > 录完对我说「帮我同步错题」我应该能用。
@@ -49,7 +49,7 @@
 > 补充（按你的实际情况二选一，AI 看得懂）：
 > · 我的电脑没装 Python → 用你自己（AI）自带的 Python 执行；
 >   你也没有的话，直接跑仓库里的 `install.bat`（会自动下载便携 Python，无需管理员）。
-> · 没装 git → 别克隆了，直接给 `deepseek/install.py` 加 `--from-zip` 参数
+> · 没装 git → 别克隆了，直接给 `install.py` 加 `--from-zip` 参数
 >   （自动下载 zip 解压安装）。
 
 AI 会替你完成克隆、建虚拟环境、装依赖、写 MCP 配置、登录智学网。

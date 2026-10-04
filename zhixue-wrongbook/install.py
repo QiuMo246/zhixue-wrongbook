@@ -104,7 +104,7 @@ def find_python() -> str:
 def locate_project(root: Path) -> Path:
     """在 root 里定位真正的项目目录（含 server.py + requirements.txt）。
 
-    仓库可能是「工作区」布局：项目嵌在 deepseek/zhixue-wrongbook/ 里。
+    项目可能直接就是 root，也可能嵌在子目录里（如仓库根的 zhixue-wrongbook/）。
     两种布局都要能装，学生不应该关心目录结构。
     """
     if (root / "requirements.txt").exists() and (root / "server.py").exists():
