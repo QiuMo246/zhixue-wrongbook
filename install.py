@@ -1,7 +1,13 @@
 """仓库根的安装入口：本仓库把项目放在 zhixue-wrongbook/ 子目录，
 学生的 AI 不应该关心目录结构 —— 本脚本自动定位真正的项目并委派安装。
 
-    python install.py --config --account <账号> --password <密码>
+    python install.py --config
+
+密码等敏感参数不要走命令行（会留在命令行历史里），交互式录入用：
+
+    python zhixue-wrongbook/tools/setup_account.py
+
+全部参数见 python install.py --help（原样转调项目安装脚本）。
 """
 
 from __future__ import annotations
