@@ -2,6 +2,8 @@
 
     python install.py              # 装 venv + 依赖，打印 MCP 配置和后续步骤
     python install.py --config     # 顺带把 MCP 配置自动写进检测到的 AI 助手（带备份、幂等）
+    python install.py --config --mcp-config ~/.my-hub/mcp.json
+                                   # 宿主不在已知三个目录里时，显式指定要写的文件
     python install.py --account 13x --password xxx
                                    # 顺带完成登录（= 用户唯一一次"登录"）
 
@@ -257,6 +259,19 @@ def mcp_entry() -> dict:
     return {"command": str(PY), "args": [str(ROOT / "server.py")]}
 
 
+def py_hint() -> str:
+    """给用户看的解释器路径（按平台）。
+
+    2026-10-05 修（测试反馈 P2-2）：这里以前写死 `.venv/Scripts/python`，
+    那是 Windows venv 布局；Linux/macOS 下 venv 里是 `bin/`，照抄就
+    「找不到文件」。与 core/pycmd.py 同规则（install.py 要在装依赖之前
+    就能跑，所以自带一份、不 import 项目包）。
+    """
+    if VENV is None:
+        return str(PY)
+    return ".venv\\Scripts\\python" if os.name == "nt" else ".venv/bin/python"
+
+
 def print_mcp_config() -> None:
     step("把下面这段加进你 AI 助手的 MCP 配置（或用 --config 自动写入）")
     print(json.dumps({"mcpServers": {"zhixue-wrongbook": mcp_entry()}},
@@ -264,6 +279,12 @@ def print_mcp_config() -> None:
 
 
 def known_config_paths() -> list[Path]:
+    """已知的 AI 宿主配置位置。
+
+    注意：这不是全集。宿主五花八门（豆包办公、各类自研 hub…），
+    认不出来时**必须**告诉用户「没配上，请手动接入」或用 --mcp-config
+    指定路径，不能只回一句「跳过」就宣称安装完成。
+    """
     home = Path.home()
     return [
         home / ".workbuddy-ai" / "mcp.json",
@@ -272,30 +293,67 @@ def known_config_paths() -> list[Path]:
     ]
 
 
-def auto_config() -> None:
+def write_mcp_entry(path: Path) -> tuple[str, str]:
+    """往一个 mcp.json 里写入本项目条目。返回 (标签, 状态)。
+
+    状态 ∈ {"written", "already", "failed"}。幂等（同名已存在就跳过）、
+    改动前备份。
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    cfg = json.loads(path.read_text(encoding="utf-8")) \
+        if path.exists() else {}
+    servers = cfg.setdefault("mcpServers", {})
+    if "zhixue-wrongbook" in servers:
+        return f"{path} 已配置过，跳过", "already"
+    if path.exists():
+        backup = path.with_suffix(
+            f".bak-{time.strftime('%Y%m%d%H%M%S')}.json")
+        shutil.copy2(path, backup)
+        print(f"  已备份原配置 → {backup.name}")
+    servers["zhixue-wrongbook"] = mcp_entry()
+    path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False),
+                    encoding="utf-8")
+    return f"已写入 {path}", "written"
+
+
+def auto_config(explicit: str = "") -> dict:
+    """--config / --mcp-config 的实现。
+
+    返回 {"written": [...], "already": [...], "hosts_found": bool} ——
+    调用方据此决定收尾提示怎么说（测试反馈 P2-1：一个宿主都没命中时
+    不能说「重启助手即生效」，那是误导）。
+    """
     step("自动写入 MCP 配置（找到几个写几个；已存在同名的跳过；改动前备份）")
-    for path in known_config_paths():
+    targets = [Path(explicit).expanduser()] if explicit else known_config_paths()
+    written: list[str] = []
+    already: list[str] = []
+    hosts_found = False
+    failed = False
+    for path in targets:
         try:
-            if not path.parent.exists():
+            if not explicit and not path.parent.exists():
                 print(f"  跳过 {path}（没有这个 AI 助手）")
                 continue
-            cfg = json.loads(path.read_text(encoding="utf-8")) \
-                if path.exists() else {}
-            servers = cfg.setdefault("mcpServers", {})
-            if "zhixue-wrongbook" in servers:
-                print(f"  跳过 {path}（已配置过）")
-                continue
-            if path.exists():
-                backup = path.with_suffix(
-                    f".bak-{time.strftime('%Y%m%d%H%M%S')}.json")
-                shutil.copy2(path, backup)
-                print(f"  已备份原配置 → {backup.name}")
-            servers["zhixue-wrongbook"] = mcp_entry()
-            path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False),
-                            encoding="utf-8")
-            print(f"  已写入 {path}")
+            if not explicit:
+                hosts_found = True
+            label, state = write_mcp_entry(path)
+            print(f"  {label}")
+            if state == "written":
+                written.append(str(path))
+            elif state == "already":
+                already.append(str(path))
         except Exception as exc:
+            failed = True
             print(f"  写 {path} 失败：{exc}（不影响其它步骤，可手动加配置）")
+    if explicit and not (written or already) and not failed:
+        print(f"  ⚠ 指定的 {targets[0]} 没有写入成功，请把上面的输出发给你的 AI。")
+    if not explicit and not hosts_found:
+        print("  ⚠ 本机没检测到受支持的 AI 助手配置目录"
+              "（~/.workbuddy-ai、~/.zcode、~/.claude）。"
+              "MCP **没有**自动接入 —— 请按上面打印的 JSON 手动加到你的助手，"
+              "或用 --mcp-config <你的 mcp.json 路径> 让本脚本写入。")
+    return {"written": written, "already": already,
+            "hosts_found": hosts_found}
 
 
 def setup_account(account: str, password: str) -> None:
@@ -307,15 +365,33 @@ def setup_account(account: str, password: str) -> None:
                          f"{PY} {ROOT / 'tools' / 'setup_account.py'}")
 
 
-def next_steps() -> None:
-    venv_note = "" if VENV else "（无 venv 模式：把命令里的 .venv 路径换成你跑 install.py 的那个 Python）"
+def next_steps(config_result: dict | None = None) -> None:
+    venv_note = "" if VENV else "（无 venv 模式：把命令里的解释器路径换成你跑 install.py 的那个 Python）"
+    py = py_hint()
+    linked = ((config_result or {}).get("written")
+              or (config_result or {}).get("already") or [])
+    hosts_found = (config_result or {}).get("hosts_found", True)
+    if linked:
+        mcp_line = (f"  1) 重启你的 AI 助手（或到连接器管理里点「信任」），让新 MCP 生效\n"
+                    f"     已接入：{', '.join(linked)}")
+    elif config_result is not None and not hosts_found:
+        mcp_line = ("  1) ⚠ MCP **尚未接入**你的 AI 助手（没检测到受支持的宿主配置目录）。\n"
+                    "     请按上面打印的 JSON 手动加到助手的 MCP 配置，"
+                    "或重跑 `python install.py --config --mcp-config <你的 mcp.json>`")
+    else:
+        mcp_line = ("  1) 把上面打印的 JSON 加进你的 AI 助手的 MCP 配置，然后重启助手\n"
+                    "     （--config 只能认 ~/.workbuddy-ai、~/.zcode、~/.claude；"
+                    "其它宿主用 --mcp-config <路径> 指定）")
     print(f"""
 ==================================================================
 安装完成。接下来：
-  1) 重启你的 AI 助手（或到连接器管理里点「信任」），让新 MCP 生效
+{mcp_line}
   2) 如果刚才没录入账号密码，跑：
-       .venv/Scripts/python tools/setup_account.py   {venv_note}
-     （这是你唯一一次需要"登录"—— 之后失效会自动重登）
+       {py} tools/setup_account.py   {venv_note}
+     （这是你唯一一次需要"登录"—— 之后失效会自动重登。
+      例外：被智学网风控、登录必须做验证码的账号，账密自动重登用不了，
+      请在助手对话里用 zx_browser_start 手动登录一次，
+      或用 zx_session_set 粘贴浏览器里的 Cookie。）
   3) 对 AI 助手说「帮我同步错题」即可开始使用
 ==================================================================
 """)
@@ -325,6 +401,10 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", action="store_true",
                     help="自动把 MCP 配置写入检测到的 AI 助手")
+    ap.add_argument("--mcp-config", default="",
+                    help="配合 --config：把 MCP 条目写进你指定的 mcp.json"
+                         "（用于 ~/.workbuddy-ai、~/.zcode、~/.claude 之外的宿主，"
+                         "如自建 MCP hub）")
     ap.add_argument("--account", default="", help="智学网账号（手机号/准考证号）")
     ap.add_argument("--password", default="", help="密码（不带则跳过登录步骤）")
     ap.add_argument("--from-zip", nargs="?", const="default", default="",
@@ -359,11 +439,12 @@ def main() -> int:
     install_deps()
     verify_imports()
     print_mcp_config()
-    if args.config:
-        auto_config()
+    cfg_result = None
+    if args.config or args.mcp_config:
+        cfg_result = auto_config(args.mcp_config)
     if args.account and args.password:
         setup_account(args.account, args.password)
-    next_steps()
+    next_steps(cfg_result)
     return 0
 
 

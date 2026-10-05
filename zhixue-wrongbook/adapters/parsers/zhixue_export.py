@@ -23,6 +23,7 @@ from pathlib import Path
 from adapters.parsers.normalize import (estimate_parse_confidence, make_id,
                                         normalize_question)
 from core.models import WrongQuestion
+from core.pycmd import pip_install
 
 EXPORT_FORMAT_VERSION = "zhixue-export/heuristic-1"
 
@@ -69,8 +70,8 @@ def extract_text(path: Path) -> tuple[str, str]:
         try:
             from pypdf import PdfReader
         except ImportError as exc:
-            raise RuntimeError("未安装 pypdf，无法解析 PDF。"
-                               "执行：.venv/Scripts/python -m pip install pypdf") from exc
+            raise RuntimeError(f"未安装 pypdf，无法解析 PDF。"
+                               f"执行：{pip_install('pypdf')}") from exc
         reader = PdfReader(str(path))
         pages = [(p.extract_text() or "") for p in reader.pages]
         text = "\n".join(pages)
@@ -85,8 +86,8 @@ def extract_text(path: Path) -> tuple[str, str]:
         try:
             import docx
         except ImportError as exc:
-            raise RuntimeError("未安装 python-docx。执行："
-                               ".venv/Scripts/python -m pip install python-docx") from exc
+            raise RuntimeError(f"未安装 python-docx。执行："
+                               f"{pip_install('python-docx')}") from exc
         d = docx.Document(str(path))
         parts = [p.text for p in d.paragraphs]
         for tbl in d.tables:

@@ -37,6 +37,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from core.pycmd import run_tool  # noqa: E402
+
 RESULTS: list[tuple[str, bool, str]] = []
 DUMP: dict = {}
 
@@ -87,7 +89,7 @@ async def main() -> int:
     log("zx_session_status 会话有效", ok, json.dumps(r, ensure_ascii=False)[:160])
     if not ok:
         print("\nCookie 无效，后续联网步骤无法进行。先跑：")
-        print("  .venv/Scripts/python tools/scan_login.py --from-clipboard")
+        print(f"  {run_tool('tools/scan_login.py')} --from-clipboard")
         return 1
 
     # ---- 2. 真实同步（写库） ----

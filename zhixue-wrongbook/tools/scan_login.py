@@ -70,6 +70,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from core.pycmd import pip_install, run_tool  # noqa: E402
 
 LOGIN_URL = "https://www.zhixue.com/login.html"
 HOME_HOST = "zhixue.com"
@@ -283,8 +284,8 @@ def login_via_browser(timeout: int, keep_open: bool) -> tuple[str | None, str]:
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
-        return None, ("未安装 playwright。请执行：\n"
-                      "  .venv/Scripts/python -m pip install playwright\n"
+        return None, (f"未安装 playwright。请执行：\n"
+                      f"  {pip_install('playwright')}\n"
                       "或直接用 --cookie 传入 Cookie 字符串。")
 
     PROFILE_DIR.mkdir(parents=True, exist_ok=True)
@@ -498,8 +499,8 @@ def main() -> int:
     sep("完成")
     print("Cookie 已存入系统凭据管理器，后续不用再登录。")
     print("下一步：")
-    print("  .venv/Scripts/python tools/verify_p0.py      # 核实真实字段（难度刻度等）")
-    print("  .venv/Scripts/python server.py               # 启动 MCP Server")
+    print(f"  {run_tool('tools/verify_p0.py')}      # 核实真实字段（难度刻度等）")
+    print(f"  {run_tool('server.py')}               # 启动 MCP Server")
     print("\n提醒：如果你在浏览器里点了「退出登录」，这个 Cookie 会立刻失效，"
           "重跑本脚本即可。")
     return 0

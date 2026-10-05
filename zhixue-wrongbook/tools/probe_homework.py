@@ -37,6 +37,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
+from core.pycmd import run_tool  # noqa: E402
 
 HW_LIST_URL = ("https://mhw.zhixue.com/homework_middle_service/"
                "stuapp/getStudentHomeWorkList")
@@ -79,7 +80,7 @@ def main() -> int:
         print("凭据管理器里没有 Cookie。")
         print("请先在你日常浏览器里登录 https://www.zhixue.com ，"
               "F12 → Console → 执行 copy(document.cookie)，")
-        print("然后跑：.venv/Scripts/python tools/probe_homework.py --from-clipboard")
+        print(f"然后跑：{run_tool('tools/probe_homework.py')} --from-clipboard")
         return 2
 
     import requests
@@ -103,7 +104,7 @@ def main() -> int:
             print("  → Cookie 已失效，后续探测无法进行。请更新：")
             print("    1) 日常浏览器登录 https://www.zhixue.com")
             print("    2) F12 → Console → copy(document.cookie)")
-            print("    3) .venv/Scripts/python tools/scan_login.py --from-clipboard")
+            print(f"    3) {run_tool('tools/scan_login.py')} --from-clipboard")
         else:
             print()
             print("  → 网络/服务端不通（不是 Cookie 的问题），稍后重试。")

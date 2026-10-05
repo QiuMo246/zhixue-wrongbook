@@ -14,6 +14,13 @@ PyYAML>=6.0,<7
 # --- Cookie 安全存储（Windows 凭据管理器 / macOS Keychain） ---
 keyring>=25.7,<26
 
+# --- 无系统凭据服务时的加密文件降级后端（2026-10-05，测试反馈 P1-1） ---
+# 场景：Linux 容器 / 云沙箱 / 服务器 —— 这些地方没有 gnome-keyring、也没有
+# Windows DPAPI，原先 set_cookie 直接硬失败，整个工具不可用。
+# 现在这类平台走 adapters/session.py 的 AES-256-GCM 加密文件后端，
+# 主密钥单独存 0600 文件。Windows 不需要它（走 DPAPI），所以按平台加。
+cryptography>=42 ; python_version >= "3.9" and sys_platform != "win32"
+
 # --- 通道 B：现成库（错题本接口） ---
 zhixuewang>=1.5.1,<2
 

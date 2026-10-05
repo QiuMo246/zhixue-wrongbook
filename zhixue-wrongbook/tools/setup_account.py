@@ -11,7 +11,8 @@
     # 也可以带参数（适合脚本化；密码会出现在命令行历史里，交互式更安全）
     .venv/Scripts/python tools/setup_account.py --account 13xxxxxxxxx --password xxx
 
-密码存系统凭据管理器（keyring 不可用时降级 Windows DPAPI 加密文件），
+密码存系统凭据管理器（keyring）；没有凭据服务的环境降级加密文件
+（Windows DPAPI / 其它平台 AES-256-GCM + 0600 主密钥），
 与 Cookie 同级保护，不落明文。
 """
 

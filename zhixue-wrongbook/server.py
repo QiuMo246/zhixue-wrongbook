@@ -48,9 +48,10 @@ from core.errors import ZxError, error_payload as _error_payload
 from core.export import (SOURCE_LABEL, try_pdf, write_json_report,
                          write_paper, wrongbook_markdown, wrongbook_xlsx)
 from core.fingerprint import check_response
+from core.pycmd import run_tool
 from core.models import Analysis, HistoryEntry, PracticeRef
 from core import practice_gates as gates
-from core.errors import CODE_PRACTICE_GATE
+from core.errors import CODE_CAPTCHA_REQUIRED, CODE_PRACTICE_GATE
 from core.profile import build_profile, review_queue
 from core.store import Store
 from core.scope import (ask_user_scope_prompt, normalize_paper_types,
@@ -450,8 +451,9 @@ def _diagnosis_gate(store: Store, subject: str, user_confirmed: bool,
 # ===========================================================================
 # 会话
 # ===========================================================================
-@mcp.tool(description="设置/更新智学网 Cookie 会话。Cookie 存系统凭据管理器，不落明文文件。"
-                      "会用一次真实请求验证 Cookie 是否有效。")
+@mcp.tool(description="设置/更新智学网 Cookie 会话。Cookie 存系统凭据管理器，"
+                      "没有凭据服务的环境按平台加密落文件（Windows DPAPI / "
+                      "AES-GCM），绝不写明文。会用一次真实请求验证 Cookie 是否有效。")
 @_guard
 def zx_session_set(cookie: str, verify: bool = True) -> str:
     cookie = (cookie or "").strip()
@@ -584,18 +586,30 @@ def _ensure_cookie() -> str:
     try:
         return auto_login.ensure_session()[0]
     except Exception as exc:
+        code = _error_payload(exc).get("error_code")
+        # 风控账号的失败原因不是「没录账密」，提示不能一律让它去重录
+        # （2026-10-05 修，测试反馈 P0-1）。
+        hint = (
+            "这个账号被风控、登录要人工过验证码：改走 zx_browser_start"
+            "（在弹出的浏览器里登录一次，之后 zx_sync_browser 采集）"
+            "或 zx_session_set（粘贴浏览器里的 Cookie）。不要让用户去改密码。"
+            if code == CODE_CAPTCHA_REQUIRED else
+            f"运行 {run_tool('tools/setup_account.py')} 录入一次账号密码，"
+            "之后 Cookie 失效会自动重登（风控账号除外，见 error_code）。")
         return _json({
             "ok": False, "error": str(exc) if isinstance(exc, ZxError)
             else f"{type(exc).__name__}: {exc}",
             **_error_payload(exc),
-            "hint": "运行 .venv/Scripts/python tools/setup_account.py 录入一次"
-                    "账号密码，之后 Cookie 失效会自动重登，全程无需手动登录。",
+            "hint": hint,
         })
 
 
-@mcp.tool(description="录入智学网账号密码（本机加密存储，keyring/DPAPI，不落明文）。"
+@mcp.tool(description="录入智学网账号密码（本机加密存储，keyring / DPAPI / "
+                      "AES-GCM 加密文件，不落明文）。"
                       "录入后立即登录一次并保存会话；此后 Cookie 失效会自动重登，"
-                      "用户全程只需操作这一次。")
+                      "用户全程只需操作这一次。**例外**：被风控、登录需人工过验证码的"
+                      "账号走不通账密登录，返回 error_code=captcha_required，"
+                      "此时改走 zx_browser_start 或 zx_session_set。")
 @_guard
 def zx_account_set(account: str, password: str) -> str:
     try:
@@ -670,7 +684,7 @@ def zx_sync(subjects: str | list[str] = "", max_exams: int = 5,
 # ===========================================================================
 # 通道 C-2：CDP 守护浏览器「借页面自身的请求」采集（包一）
 # ===========================================================================
-@mcp.tool(description="启动 CDP 守护浏览器（通道 C-2）。弹出**专用** Chrome 窗口，"
+@mcp.tool(description="启动 CDP 守护浏览器（通道 C-2）。弹出**专用** Chrome/Chromium 窗口"
                       "让用户在里面登录智学网一次，登录态留在专用 profile 里，"
                       "凭据不经手 MCP。启动后调 zx_sync_browser 采集。"
                       "⚠️ 真机联调未完成（not_verified）：接口结构以真机核验为准。")

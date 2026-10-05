@@ -61,6 +61,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from core.fingerprint import FingerprintStore, check_response  # noqa: E402
+from core.pycmd import run_tool  # noqa: E402
 
 
 def _fp_store() -> FingerprintStore:
@@ -95,7 +96,7 @@ def _client():
         print("凭据管理器里没有 Cookie。请先：")
         print("  1) 日常浏览器登录 https://www.zhixue.com")
         print("  2) F12 → Console → copy(document.cookie)")
-        print("  3) .venv/Scripts/python tools/scan_login.py --from-clipboard")
+        print(f"  3) {run_tool('tools/scan_login.py')} --from-clipboard")
         raise SystemExit(2)
 
     cli = ZhixueWebClient(raw)

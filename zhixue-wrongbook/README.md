@@ -38,6 +38,11 @@
 > 帮我安装智学网错题助手：从 Gitee 克隆 https://gitee.com/qiu_moRs/zhixue-wrongbook 到本地（GitHub 地址 https://github.com/QiuMo246/zhixue-wrongbook 作为后备），运行仓库里的
 > `install.py --config`（它会自动定位真正的项目目录）。
 > 装好后重启 MCP 连接。
+> 注意：`--config` 只认 ~/.workbuddy-ai、~/.zcode、~/.claude 三个宿主目录。
+> 如果你的宿主不在里面（比如自建 MCP hub、其它 AI 助手），就用
+> `install.py --config --mcp-config <你的 mcp.json 路径>` 写进去；
+> 两者都不成立时**明确告诉我「MCP 还没接入，需要手动加配置」**，
+> 不要只说「重启助手就生效」（2026-10-05 反馈：那是误导）。
 >
 > 然后录入智学网账号密码：这一步**由我在我自己的终端完成**——
 > 你的命令通道是非交互的，直接跑交互式脚本会卡住或读不到我的键盘输入，
@@ -59,7 +64,9 @@
 
 AI 会替你完成克隆、建虚拟环境、装依赖、写 MCP 配置、登录智学网。
 **你只需要发这一句话 + 等它做完** —— 这也是你唯一一次输入账号密码
-（之后 Cookie 失效会自动重登，见第 3 步说明）。
+（之后 Cookie 失效会自动重登，见第 3 步说明；
+**例外**：被风控、登录必须做验证码的账号走不通账密自动重登，
+改用 `zx_browser_start` 或 `zx_session_set`，同样只需人工登录一次）。
 账号密码走 `setup_account.py` 的隐藏输入，**不进命令行历史**
 （2026-09-27 起安装提示词不再让密码出现在 `--password` 参数里）。
 
@@ -67,25 +74,33 @@ AI 会替你完成克隆、建虚拟环境、装依赖、写 MCP 配置、登录
 
 ### 1. 装依赖
 
+> **路径按平台**：下面示例写的是 Windows venv 布局。
+> macOS / Linux 把 `.venv/Scripts/python` 换成 `.venv/bin/python`
+> （`Scripts` 目录只存在于 Windows；2026-10-05 起，脚本运行时打印的
+> 命令已按当前平台自动生成，照抄即可）。
+
 ```bash
 cd zhixue-wrongbook
 python -m venv .venv
 .venv/Scripts/python -m pip install -r requirements.txt     # Windows
-# source .venv/bin/activate && pip install -r requirements.txt   # macOS/Linux
+.venv/bin/python -m pip install -r requirements.txt         # macOS / Linux
 ```
 
 ### 2. 先跑验收（不需要 Cookie、不需要联网）
 
 ```bash
 .venv/Scripts/python tools/acceptance.py     # 主干全链路，94 项
-.venv/Scripts/python tools/edge_test.py      # 补测边界路径，207 项
+.venv/Scripts/python tools/edge_test.py      # 补测边界路径，247 项
 .venv/Scripts/python tools/mcp_e2e.py        # 走真实 MCP 协议，71 项
 ```
 
-三套合计 **372 项检查**。其中 `edge_test.py` 专门覆盖主干验收走不到的路径：
+三套合计 **412 项检查**。其中 `edge_test.py` 专门覆盖主干验收走不到的路径：
 通道 B 的写入链路 `sync()`（用假对象离线跑，含 40217 重试）、
-.docx/.pdf 解析、DPAPI 降级、老库迁移、xlsx 优雅失败，
-以及 **P/Q/R/S 四节回归**（派生字段覆盖规则、参数形状、会话三态、路径解析）。
+.docx/.pdf 解析、加密文件降级（DPAPI / AES-GCM 按平台）、老库迁移、
+xlsx 优雅失败，**P/Q/R/S 四节回归**（派生字段覆盖规则、参数形状、会话三态、
+路径解析），以及 **W 节**（2026-10-05 真实环境测试反馈的六条问题：
+登录 SSO 字段、风控验证码分流、无 keyring 平台的会话存储、
+跨平台命令路径、Chrome 探测、安装脚本宿主未命中提示）。
 
 > **P 节是 2026-09-25 补的，值得单独说一句。**
 > 那天发现一个 P0 缺陷：**重新同步会把已提交的分析结果全部清空**
@@ -102,21 +117,44 @@ python -m venv .venv
 ```
 
 按提示输入账号（手机号/准考证号）和密码（不回显）。脚本会：真实登录一次 →
-会话存系统凭据管理器 → **账号密码也加密存本机**（keyring / DPAPI，
-同样不落明文）。**此后 Cookie 失效会自动用存档账密重登，
+会话存系统凭据管理器 → **账号密码也加密存本机**（keyring / DPAPI /
+AES-GCM 加密文件，同样不落明文）。**此后 Cookie 失效会自动用存档账密重登，
 再也不用手动登录、不用碰 F12。**
 
+> **适用范围（2026-10-05 按真实环境测试如实限定，测试反馈 P0-1）**：
+> 「只需登录一次 + 失效自动重登」**只对未被风控的账号成立**。
+> 被智学网风控命中的账号，登录必须人工过验证码，程序拿不到会话 ——
+> 这类账号请改走 **通道 C-2**（对助手说「启动浏览器登录」→
+> `zx_browser_start`，在弹出的专用 Chrome 里手动登录一次，之后采集
+> 借页面自己的请求）或**复制 Cookie**（`zx_session_set`）。
+> 本项目**不尝试绕过验证码**。
+>
 > 原理（2026-09-25 逆向实测）：真登录页是 `login_v1.html`，提交走
-> `POST /edition/login`，密码 RC4 加密（`rc4.js` 的 `zxlogin_secret`）。
-> 同域直接种会话，无 CAS、无极验。
-> 风控要求验证码时会如实报错让你稍后再试，不硬绕。
+> `POST /edition/login`，密码 RC4 加密（`rc4.js` 的 `zxlogin_secret`），
+> 表单同时携带官方前端的 SSO 字段
+> （`appId=zx-container-client`、`deviceName=web`、`client=web`、
+> `deviceId=<uuid>`）。同域直接种会话，无 CAS、无极验。
 >
 > **2026-09-27 修正**：审计发现此前的 RC4 复刻把密钥流多套了一层
 > `S[...]`（与 rc4.js 原文逐句比对确认），密文和真实前端对不上 ——
 > 也就是说账密自动重登此前从未真正可用过（旧文档里「假账密能到达
 > 账号或密码错误」只说明接口可达，说明不了加密正确）。密钥流已改为
-> 与 rc4.js 一致的单重索引；**还需要一次真机账密登录验证**，
-> 如仍报「账号或密码错误」请反馈。
+> 与 rc4.js 一致的单重索引；2026-10-05 真实环境复核：同一明文在
+> 官方 `rc4.js` 与本项目 `rc4_hex()` 下输出**逐字节一致**，
+> 该向量已钉进 `tools/edge_test.py` W2 当回归断言。
+>
+> **2026-10-05 修正（测试反馈 P0-1）**：旧文档写「风控要求验证码时会
+> 如实报错」——**这句话此前不成立**。请求只发了
+> `loginName/password/description` 三个字段，官方前端还会带
+> `appId=zx-container-client`、`deviceName=web`、`client=web`、
+> `deviceId=<uuid>`；缺这些字段时，风控账号服务端统一回
+> 「账号或密码错误」，真实原因（要验证码）被完全掩盖，用户会被误导去改密码。
+> 现在：① 四个 SSO 字段已补齐；② 服务端回「验证码错误 / needValidName /
+> riskPassword / riskAccount」时，返回 `error_code=captcha_required`
+> 并明说「这不是密码错误，不要去改密码」，建议动作直接指向
+> `zx_browser_start` 与 `zx_session_set`；③ 反过来，
+> 「账号或密码错误」也**不再被当作「密码确实错了」的结论** ——
+> 它同样可能来自风控。
 >
 > 旧的「复制 Cookie」流程（`tools/scan_login.py --from-clipboard` /
 > `zx_session_set`）仍保留作备选。别用自动化浏览器登录（会触发极验，
@@ -125,6 +163,16 @@ python -m venv .venv
 > **隐私说明（2026-09-25 按项目主人决策更新）**：README 原先写
 > 「不存账号密码」；现允许账密存本机（与 Cookie 同级加密保护），
 > 换取「全程只需登录一次」。不想存账密的用户仍可走复制 Cookie 备选流程。
+>
+> **安全存储三级后端（2026-10-05 补，测试反馈 P1-1）**：
+> keyring（系统凭据管理器）→ Windows DPAPI 加密文件 →
+> 跨平台 AES-256-GCM 加密文件（`~/.config/zhixue-*/master.key` 存主密钥，
+> `chmod 600`）。第三级是给 **Linux 容器 / 云沙箱 / 服务器**用的：
+> 这些环境没有 gnome-keyring 也没有 DPAPI，此前 `zx_session_set` 直接硬失败，
+> 整套工具不可用。**强度声明**：第三级的保护等于文件权限
+> （同用户的其它进程可读回密钥），弱于系统凭据管理器和 DPAPI，
+> 因此只在两者都不可用时启用，且**永不**在 Windows 上抢在 DPAPI 前面；
+> 三级都不用时仍然拒绝写明文（这是设计，不是缺陷）。
 
 **核实真实字段**
 
@@ -153,20 +201,27 @@ python -m venv .venv
 
 ### 4. 接到 AI 助手里（MCP 配置）
 
-编辑 `~/.workbuddy-ai/mcp.json`，把 `mcpServers` 加上这一项：
+编辑 `~/.workbuddy-ai/mcp.json`（`~/.zcode`、`~/.claude` 同理；
+其它宿主请按你自己的宿主文档改同名文件，或跑
+`python install.py --config --mcp-config <你的 mcp.json 路径>` 让脚本写），
+把 `mcpServers` 加上这一项。**路径按你的平台和实际安装位置改**
+（下面 `<项目根>` 指 `zhixue-wrongbook/` 所在的绝对路径）：
 
 ```json
 {
   "mcpServers": {
     "zhixue-wrongbook": {
-      "command": "D:\\Data\\Desktop\\智学网-deepseek\\deepseek\\zhixue-wrongbook\\.venv\\Scripts\\python.exe",
+      "command": "<项目根>/.venv/bin/python",
       "args": [
-        "D:\\Data\\Desktop\\智学网-deepseek\\deepseek\\zhixue-wrongbook\\server.py"
+        "<项目根>/server.py"
       ]
     }
   }
 }
 ```
+
+Windows 把 `command` 换成 `<项目根>\\.venv\\Scripts\\python.exe`。
+`python install.py` 装完会直接打印一份填好真实路径的版本，照抄更省事。
 
 然后到连接器管理页右上角的「自定义连接器」里点「信任」，新 MCP 才会生效。
 
@@ -222,8 +277,8 @@ zhixue-wrongbook/
 │  └─ wrongbook.db              # 本地库（首次运行生成）
 ├─ tools/
 │  ├─ acceptance.py             # 主干端到端验收（94 项，无需联网）
-│  ├─ edge_test.py              # 补测边界路径（179 项，无需联网）
-│  ├─ mcp_e2e.py                # MCP 通道端到端演示（59 项，含诊断闸门七态）
+│  ├─ edge_test.py              # 补测边界路径（247 项，无需联网）
+│  ├─ mcp_e2e.py                # MCP 通道端到端演示（71 项，含诊断闸门七态）
 │  ├─ verify_p0.py              # P0 验证（需要 Cookie）
 │  └─ calibrate.py              # 相似度阈值校准
 ├─ skill/zhixue-wrongbook/      # 编排 Skill
@@ -421,6 +476,8 @@ zx_knowledge_points(query="西安事变", subject="历史")     → 按关键词
 ---
 
 ## 常用命令
+
+> macOS / Linux：把下面的 `.venv/Scripts/python` 换成 `.venv/bin/python`。
 
 ```bash
 # 验收

@@ -43,6 +43,7 @@ from adapters.parsers.normalize import download_images, normalize_question
 from adapters.parsers.zhixue_export import ANSWER_TYPE_MEANING, qtype_from_answer_type
 from adapters.zhixuewang import SOURCE_VERSION, _as_url_list, _looks_like_url
 from core.config import get_config
+from core.pycmd import run_tool
 from core.store import Store
 
 SOURCE = "api-homework"
@@ -161,7 +162,7 @@ def main() -> int:
 
     path = ROOT / args.file
     if not path.exists():
-        print(f"找不到 {path}。先跑：.venv/Scripts/python tools/fetch_homework.py --full")
+        print(f"找不到 {path}。先跑：{run_tool('tools/fetch_homework.py')} --full")
         return 2
 
     rows = json.loads(path.read_text(encoding="utf-8"))

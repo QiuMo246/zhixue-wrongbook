@@ -23,12 +23,18 @@
   * 真实页面的 URL、响应时序、翻页交互：**尚未真机跑通**（那是 qwen
     分支在它的栈里验证过的，本移植需要一次真机联调）。
     联调前 zx_sync_browser 如实返回 not_verified 标记，不假装能用。
+  * 2026-10-05（测试反馈 P2-3）：补了 Linux/macOS 的 Chrome/Chromium
+    路径探测 + PATH 兜底，本通道在非 Windows 上不再只能靠手工
+    ZX_CHROME_PATH。**真机联调仍未完成** —— 它必须由人在弹出的浏览器
+    里过一次登录（风控账号还要做验证码），离线环境做不到，
+    所以 not_verified 标记保留，不因为「补了路径」就宣称验证过。
 """
 
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -38,6 +44,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from core.errors import CODE_DEPENDENCY_MISSING, ZxError
+from core.pycmd import pip_install
 
 ROOT = Path(__file__).resolve().parent.parent
 PROFILE_DIR = Path(os.environ.get(
@@ -47,23 +54,59 @@ ERRORBOOK_URL = "https://www.zhixue.com/errorbook/"
 # 页面自己发出的错题本数据接口（相对特征，匹配 URL 子串）
 CAPTURE_PATTERN = "getErrorbookList"
 
+# 各平台 Chrome/Chromium 常见安装路径（2026-10-05 补，测试反馈 P2-3：
+# 原来只有 Windows 三条，Linux/macOS 必须手动设 ZX_CHROME_PATH ——
+# 而风控账号恰恰需要这条通道兜底）。
 DEFAULT_CHROMES = {
     "win32": [
         r"C:\Program Files\Google\Chrome\Application\chrome.exe",
         r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
         os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
     ],
+    "darwin": [
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        str(Path.home() / "Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+    ],
+    "linux": [
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/snap/bin/chromium",
+        str(Path.home() / ".local/bin/chromium"),
+    ],
+}
+
+# PATH 里按名字找（第三层兜底：装在不同前缀下的发行版）
+WHICH_NAMES = {
+    "win32": ["chrome.exe", "chrome"],
+    "darwin": ["google-chrome", "chrome"],
+    "linux": ["google-chrome", "google-chrome-stable", "chromium",
+              "chromium-browser"],
 }
 
 
 # ---------------------------------------------------------------------------
 # Chrome 守护进程管理（所有权规则见模块 docstring）
 # ---------------------------------------------------------------------------
-def chrome_executable() -> Path | None:
+def chrome_candidates() -> list[Path]:
+    """本平台要探测的 Chrome 可执行文件（ZX_CHROME_PATH 优先）。"""
     env = os.environ.get("ZX_CHROME_PATH")
-    cands = [Path(env)] if env else [Path(p) for p in
-                                     DEFAULT_CHROMES.get(sys.platform, [])]
-    for c in cands:
+    if env:
+        return [Path(env)]
+    plat = "win32" if sys.platform == "win32" else (
+        "darwin" if sys.platform == "darwin" else "linux")
+    cands = [Path(p) for p in DEFAULT_CHROMES.get(plat, [])]
+    for name in WHICH_NAMES.get(plat, []):
+        found = shutil.which(name)
+        if found:
+            cands.append(Path(found))
+    return cands
+
+
+def chrome_executable() -> Path | None:
+    for c in chrome_candidates():
         if c.exists():
             return c
     return None
@@ -124,11 +167,16 @@ def start_daemon(port: int = 0) -> dict:
     chrome = chrome_executable()
     if chrome is None:
         raise ZxError(
-            "没找到 Chrome。CDP 采集通道需要本机安装 Google Chrome。",
+            "没找到 Chrome/Chromium。CDP 采集通道需要本机安装 "
+            f"Google Chrome 或 Chromium（本平台探测过 "
+            f"{len(chrome_candidates())} 个常见位置 + PATH）。",
             code=CODE_DEPENDENCY_MISSING,
-            missing=["Google Chrome（或设 ZX_CHROME_PATH 环境变量指向 chrome.exe）"],
-            suggested_action=["安装 Chrome 后重试",
-                              "或设 ZX_CHROME_PATH 指向现有 chrome.exe"])
+            missing=["Google Chrome / Chromium（或设 ZX_CHROME_PATH 指向可执行文件）"],
+            suggested_action=[
+                "安装 Chrome 或 Chromium 后重试",
+                "或设 ZX_CHROME_PATH 指向已有的浏览器可执行文件，"
+                "如 ZX_CHROME_PATH=/usr/bin/chromium",
+            ])
     if daemon_status().get("running"):
         return {"ok": True, "already_running": True, **daemon_status()}
 
@@ -211,7 +259,7 @@ class CdpTransport:
                 code=CODE_DEPENDENCY_MISSING,
                 missing=["python 包 websocket-client"],
                 suggested_action=[
-                    "运行 .venv/Scripts/python -m pip install websocket-client"]) from exc
+                    f"运行 {pip_install('websocket-client')}"]) from exc
         self._ws = websocket.create_connection(ws_url, timeout=10)
         self._next_id = 0
 

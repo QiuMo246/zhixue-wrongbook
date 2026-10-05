@@ -161,6 +161,12 @@ agent_created: true
    - 或用户愿意的话，把账号密码发给你，你调 `zx_account_set(account, password)`。
    录入时即登录一次并存会话，**之后 Cookie 失效会自动重登，用户永远不用再登录**。
    （旧的复制 Cookie 流程 `zx_session_set` 仍保留作备选。）
+   ⚠ **例外（2026-10-05，真实环境实测）**：被智学网风控命中的账号登录必须
+   人工过验证码，账密这条路**走不通**，`zx_account_set` 会返回
+   `error_code=captcha_required`。这时**不要让用户改密码**，改走：
+   `zx_browser_start`（用户在弹出的专用 Chrome 里手动登录一次，之后
+   `zx_sync_browser` 采集）或 `zx_session_set`（粘贴浏览器里的 Cookie）。
+   对这类账号，向用户如实说明「自动重登用不了」，别照抄上面的承诺。
 3. `zx_list_exams` → 把考试列表给用户看，让他选
 4. `zx_sync(subjects="数学", exam_ids="...")` → 同步
 5. 报告：同步了多少题、有没有报错、有没有需要复核的
@@ -246,8 +252,9 @@ agent_created: true
   （只读，不写库不下载图片）。
 - 手写图片太小时，用 PIL 裁剪 + 放大再 Read。
   **2026-09-25 起项目 venv 里已经有 pillow 了**（`pip install pillow`，见
-  `requirements.txt` 的可选段），直接用 `.venv/Scripts/python.exe` 就行，
-  不用再切到系统 Python。装它的原因是「读原始答题卡填涂卡」这条流程需要裁剪放大，
+  `requirements.txt` 的可选段），直接用 venv 里的解释器就行，
+  不用再切到系统 Python。路径按平台：Windows `.venv/Scripts/python.exe`，
+  macOS/Linux `.venv/bin/python`。装它的原因是「读原始答题卡填涂卡」这条流程需要裁剪放大，
   而它只用在**分析侧**、MCP Server 本身不依赖它。
 - `submit_solution` 校验**生成题**时必须传 `standard_answer`（生成题自己声称的答案）。
   不传的话它会拿生成题答案去和**母题**的标准答案比，得到的 mismatch 毫无意义
@@ -518,9 +525,10 @@ LaTeX 残留（\\[a-zA-Z]+）== 0
 
 | error_code | 含义 | 你该做什么 |
 |---|---|---|
-| `auto_login_failed` | 自动登录失败（网络不通 / 密码错 / 风控验证码） | 先看 `error` 里的具体原因：网络问题等会重试；密码问题引导用户重录账密；**出现验证码时如实告知，不要尝试绕过** |
-| `session_expired` | 会话失效且没有可用的自动重登手段 | 按 `suggested_action` 引导：重录账密 / 粘贴 Cookie / 走导出通道 |
-| `no_safe_storage` | 没有可用的安全存储后端 | 让用户装 keyring；**明文存储是被拒绝的设计，不要找变通办法** |
+| `auto_login_failed` | 账密登录失败（网络不通 / 账号密码被服务端拒绝） | 先看 `error` 里的具体原因：网络问题等会重试；密码问题引导用户重录账密。**注意：`账号或密码错误` 不能直接当「密码真的错了」转述** —— 风控账号在缺字段时也会回这句（2026-10-05 实测），先确认是不是该走 `captcha_required` |
+| `captcha_required` | 账号被智学网风控，登录必须人工过验证码（2026-10-05 新增） | **别让用户去改密码**，也不要尝试绕过验证码。照 `suggested_action` 二选一：`zx_browser_start`（用户在专用 Chrome 里手动登录一次，之后走 `zx_sync_browser`）或 `zx_session_set`（用户从已登录浏览器粘贴 Cookie）。同时如实说明：这类账号享受不到「Cookie 失效自动重登」 |
+| `session_expired` | 会话失效且没有可用的自动重登手段 | 按 `suggested_action` 引导：重录账密 / 粘贴 Cookie / 走导出通道；风控账号按上一行走浏览器通道 |
+| `no_safe_storage` | 三级安全存储后端全不可用（keyring / DPAPI / AES-GCM 加密文件） | 照 `suggested_action` 的**具体命令**装依赖（Linux 沙箱装 `cryptography` 即可启用加密文件后端；装 `keyring` 单独没用，还得有系统凭据服务）。**明文存储是被拒绝的设计，不要找变通办法** |
 | `dependency_missing` | 可选依赖没装（如 openpyxl） | 照 `suggested_action` 执行安装命令，或改用不依赖它的备选格式 |
 | `fingerprint_drift` | 智学网接口返回结构变了（改版预警） | **停止解析，不要重试**；如实告诉用户"平台改版了，等工具更新"，把 `error` 原文转给维护者 |
 | `disclosure_not_confirmed` | 数据出网未获用户确认 | 把返回的披露清单念给用户，等他明确同意后再带 `confirm=true` 重调；用户拒绝就停在仅统计模式 |

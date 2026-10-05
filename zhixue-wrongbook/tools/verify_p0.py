@@ -44,6 +44,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from core.config import get_config  # noqa: E402
+from core.pycmd import pip_install  # noqa: E402
 
 COOKIE_BOOKMARK = (
     "javascript:(function(){function g(){return document.cookie}"
@@ -90,7 +91,7 @@ def main() -> int:
         from adapters.zhixuewang import LIB_VERSION
     except ImportError as exc:
         print(f"导入失败：{exc}")
-        print("请先执行：.venv/Scripts/python -m pip install -r requirements.txt")
+        print(f"请先执行：{pip_install('-r requirements.txt')}")
         return 1
 
     sep("步骤 0 / 获取 Cookie")

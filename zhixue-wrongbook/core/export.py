@@ -18,6 +18,7 @@ from typing import Any
 
 from .errors import CODE_DEPENDENCY_MISSING, ZxError
 from .models import WrongQuestion, html_to_text
+from .pycmd import pip_install
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE_PATH = ROOT / "templates" / "paper.html"
@@ -104,11 +105,10 @@ def wrongbook_xlsx(questions: list[WrongQuestion], path: str | Path) -> str:
         from openpyxl import Workbook
     except ImportError as exc:
         raise ZxError(
-            "未安装 openpyxl，无法导出 xlsx。执行："
-            ".venv/Scripts/python -m pip install openpyxl",
+            f"未安装 openpyxl，无法导出 xlsx。执行：{pip_install('openpyxl')}",
             code=CODE_DEPENDENCY_MISSING,
             missing=["python 包 openpyxl"],
-            suggested_action=["运行 .venv/Scripts/python -m pip install openpyxl",
+            suggested_action=[f"运行 {pip_install('openpyxl')}",
                               "或改用 zx_export_wrongbook(fmt=\"md\")"]) from exc
     wb = Workbook()
     ws = wb.active

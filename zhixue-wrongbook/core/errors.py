@@ -11,7 +11,8 @@
 不做替换。普通异常不带这三个键，形状与从前完全一致。
 
 错误码清单（协商话术表：skill/zhixue-wrongbook/SKILL.md「错误码协商表」）：
-    auto_login_failed          自动登录失败（网络不通 / 密码错 / 风控验证码）
+    auto_login_failed          账密登录失败（网络不通 / 账号密码被拒）
+    captcha_required           账号被风控，登录必须过验证码（账密这条路走不通）
     session_expired            会话失效且没有可用的自动重登手段
     no_safe_storage            没有可用的安全存储后端（拒绝明文是设计）
     dependency_missing         可选依赖未安装（如 openpyxl）
@@ -25,6 +26,7 @@
 from __future__ import annotations
 
 CODE_AUTO_LOGIN_FAILED = "auto_login_failed"
+CODE_CAPTCHA_REQUIRED = "captcha_required"
 CODE_SESSION_EXPIRED = "session_expired"
 CODE_NO_SAFE_STORAGE = "no_safe_storage"
 CODE_DEPENDENCY_MISSING = "dependency_missing"
