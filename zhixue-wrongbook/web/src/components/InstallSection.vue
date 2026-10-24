@@ -2,8 +2,11 @@
 import { ref } from 'vue'
 import { AI_PROMPT, copyInstallPrompt } from '../installPrompt.js'
 
-const GITEE = 'https://gitee.com/qiu_moRs/zhixue-wrongbook'
 const GITHUB = 'https://github.com/QiuMo246/zhixue-wrongbook'
+// 国内加速镜像（前缀 + 完整 GitHub 地址）。第三方公益代理，
+// 2026-10-24 实测可用；挂了就用 GitHub 直连。
+const MIRROR = 'https://gh-proxy.org/'
+const MIRROR_ALT = 'https://gh-proxy.com/'
 
 const copied = ref(false)
 
@@ -36,45 +39,48 @@ const manualSteps = [
   <section id="install">
     <div class="wrap">
       <p class="kicker">怎么安装</p>
-      <h2 class="hf sec-title">先搞懂 <span class="hl">Gitee 和 GitHub</span>，再挑一种装法</h2>
+      <h2 class="hf sec-title">源码在 <span class="hl">GitHub</span>，国内走镜像加速</h2>
       <p class="sec-lead">
-        没听说过这两个网站？没关系，30 秒讲明白。
+        GitHub 国内直连经常超时。不用你操心 —— 安装时会自动换镜像。
       </p>
 
-      <!-- Gitee / GitHub 从零解释 -->
+      <!-- 为什么要镜像：从零解释 -->
       <div class="explain card">
         <p>
-          <strong>Gitee（码云）和 GitHub</strong> 都是「放代码的网站」，就像两个网盘。
-          这个项目在两个网站各放了一份，<strong>内容完全一样</strong>，
-          从哪个下载都行。区别只有一个：<strong>Gitee 在国内，GitHub 在国外。</strong>
+          这个项目的源码放在 <strong>GitHub</strong>（国外的代码托管网站）。
+          国内直连它经常转圈甚至打不开，所以准备了<strong>镜像加速</strong>：
+          由第三方站点替你从 GitHub 取文件，再从国内发给你，速度稳得多。
+          <strong>两条通道内容完全一样</strong>，用哪个都行。
         </p>
       </div>
 
       <div class="vs-grid">
-        <div class="card repo gitee">
+        <div class="card repo mirror">
           <p class="rec hf">✓ 默认推荐</p>
-          <h3 class="hf">Gitee</h3>
+          <h3 class="hf">镜像加速</h3>
           <ul>
-            <li class="mark-yes-p">国内网站，打开快、访问稳</li>
-            <li class="mark-yes-p">速度稳定，下载安装包快</li>
+            <li class="mark-yes-p">国内直连，不用翻墙</li>
+            <li class="mark-yes-p">一条挂了自动换下一条</li>
           </ul>
-          <p class="who">→ GitHub 打不开、转圈半天的时候，就用这个</p>
-          <a class="btn btn-red" :href="GITEE" target="_blank" rel="noopener">去 Gitee 仓库</a>
+          <p class="who">→ 绝大多数情况用这个，复制提示词就行</p>
+          <button class="btn btn-red" type="button" @click="copyPrompt">
+            {{ copied ? '✓ 已复制！' : '复制安装提示词' }}
+          </button>
         </div>
 
         <div class="card repo github">
-          <h3 class="hf">GitHub</h3>
+          <h3 class="hf">GitHub 直连</h3>
           <ul>
-            <li>国外网站，国内直连经常打不开或极慢</li>
-            <li>功能一样，只是「门」在国外</li>
+            <li>官方原站，代码、提交记录、Issue 都在这</li>
+            <li>国内直连不稳，海外或挂了代理时最快</li>
           </ul>
-          <p class="who">→ 网络没问题、或者老师同学都用 GitHub，再用这个</p>
+          <p class="who">→ 想自己看源码、提问题，来这里</p>
           <a class="btn btn-ghost" :href="GITHUB" target="_blank" rel="noopener">去 GitHub 仓库</a>
         </div>
       </div>
 
       <p class="verdict">
-        拿不准？<strong>就用 Gitee，一定不会错。</strong>
+        拿不准？<strong>用镜像，一定不会错。</strong>
       </p>
 
       <!-- 懒人安装法 -->
@@ -108,8 +114,11 @@ const manualSteps = [
           </li>
         </ol>
         <p class="manual-more">
-          完整命令和注意事项见仓库里的
-          <a :href="GITEE + '#readme'" target="_blank" rel="noopener">README.md</a>。
+          第一步拿代码（没装 git 就改用 <code>install.py --from-zip</code>）：
+          <br><code class="cmd">git clone {{ MIRROR }}{{ GITHUB }}</code>
+          <br>这条不通就换：<code class="cmd">git clone {{ MIRROR_ALT }}{{ GITHUB }}</code>
+          <br>完整命令和注意事项见仓库里的
+          <a :href="GITHUB + '#readme'" target="_blank" rel="noopener">README.md</a>。
         </p>
       </details>
     </div>
@@ -153,9 +162,21 @@ const manualSteps = [
   padding: 24px;
 }
 
-.repo.gitee {
+.repo.mirror {
   border: 2px solid var(--red);
   transform: rotate(-0.5deg);
+}
+
+/* 手动安装里的命令：等宽、可换行，别撑破卡片 */
+.cmd {
+  display: inline-block;
+  margin: 4px 0;
+  padding: 3px 8px;
+  background: #f2f0e8;
+  border-radius: 5px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12.5px;
+  word-break: break-all;
 }
 
 .repo.github {

@@ -1,5 +1,4 @@
 <script setup>
-const GITEE = 'https://gitee.com/qiu_moRs/zhixue-wrongbook'
 const GITHUB = 'https://github.com/QiuMo246/zhixue-wrongbook'
 
 const faqs = [
@@ -21,7 +20,7 @@ const faqs = [
   },
   {
     q: 'GitHub 打不开怎么办？',
-    a: '用 Gitee。两个仓库内容完全一样，Gitee 在国内打开快、访问稳：https://gitee.com/qiu_moRs/zhixue-wrongbook 。拿不准就用 Gitee，一定不会错。',
+    a: '走镜像。安装提示词里已经写好两条镜像地址（gh-proxy.org、gh-proxy.com），AI 会按顺序自动重试，不用你操心。镜像全挂时还有兜底：手动打开 https://github.com/QiuMo246/zhixue-wrongbook 点「Code → Download ZIP」，把 zip 路径交给 AI，用 install.py --from-zip 装。',
   },
   {
     q: '换电脑怎么办？',

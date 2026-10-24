@@ -37,7 +37,7 @@ async function copyPrompt() {
         <p class="hero-hint">
           {{ copied
             ? '打开你的 AI 助手，粘贴发送 —— 剩下的它替你装好。'
-            : '不用自己去 Gitee 下载配置：复制这段话发给 AI 助手，它替你装好。' }}
+            : '不用自己下载配置：复制这段话发给 AI 助手，它替你装好。' }}
         </p>
         <ul class="badges">
           <li><strong>8 类</strong>错因枚举</li>

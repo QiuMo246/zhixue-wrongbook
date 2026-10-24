@@ -35,7 +35,10 @@
 
 ### 0. 学生最懒安装法（推荐）：把下面这段话发给你的 AI 助手
 
-> 帮我安装智学网错题助手：从 Gitee 克隆 https://gitee.com/qiu_moRs/zhixue-wrongbook 到本地（GitHub 地址 https://github.com/QiuMo246/zhixue-wrongbook 作为后备），运行仓库里的
+> 帮我安装智学网错题助手：从 GitHub 克隆 https://github.com/QiuMo246/zhixue-wrongbook 到本地。
+> 国内直连不稳，优先走镜像：`git clone https://gh-proxy.org/https://github.com/QiuMo246/zhixue-wrongbook`
+> （不通就换 `https://gh-proxy.com/` 前缀，再不行才直连；没装 git 就跑 `install.py --from-zip`，
+> 脚本内置同一组镜像会自动换源）。然后运行仓库里的
 > `install.py --config`（它会自动定位真正的项目目录）。
 > 装好后重启 MCP 连接。
 > 注意：`--config` 只认 ~/.workbuddy-ai、~/.zcode、~/.claude 三个宿主目录。

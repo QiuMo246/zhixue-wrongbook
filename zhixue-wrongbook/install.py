@@ -51,10 +51,22 @@ for _stream in (sys.stdout, sys.stderr):
 
 REQUIRED_IMPORTS = ["mcp", "pydantic", "yaml", "keyring", "requests", "PIL"]
 
-REPO = "QiuMo246/zhixue-wrongbook"          # GitHub 后备源
-GITEE_REPO = "qiu_moRs/zhixue-wrongbook"    # 默认源：国内免代理直连
-GITEE_TAG = "install"                       # 装安装包 zip 的 Gitee Release 标签
+REPO = "QiuMo246/zhixue-wrongbook"          # 唯一源码源（GitHub）
 REPO_BRANCH = "main"
+
+# GitHub 国内加速镜像（2026-10-24 实机测速排序：gh-proxy.org 6s、
+# gh-proxy.com 12s，都是 993 KB 的仓库 zip 全量下载）。
+#
+# 为什么要镜像：GitHub 在国内直连经常超时（实测 codeload 直连 20s 只
+# 下到 90%），学生环境又普遍没有代理。用法就是把完整 GitHub URL 拼在
+# 镜像前缀后面，镜像站替你回源。
+#
+# ⚠️ 这些都是第三方公益代理，随时可能关停 —— 所以下面 codeload 直连
+# 仍然保留作兜底，全挂时提示用户手动下载 zip。换镜像时记得重新测速。
+GH_MIRRORS = [
+    "https://gh-proxy.org/",
+    "https://gh-proxy.com/",
+]
 
 # 供应链完整性（2026-09-27 新增，优化.md 安装链路 P1「下载无完整性校验」）：
 # Release 附件是可变资源 —— 重建附件后**必须**同步更新这里的 sha256
@@ -147,12 +159,12 @@ def fetch_from_zip(target: Path, url: str = "",
     """
     # 学生环境没有代理，按国内可达性排序；逐个试，zip 魔数不对（如反爬
     # 返回 HTML 页面）也当失败继续换源。
-    sources = [url] if url else [
-        f"https://gitee.com/{GITEE_REPO}/releases/download/"
-        f"{GITEE_TAG}/zhixue-wrongbook-{REPO_BRANCH}.zip",
-        f"https://gitee.com/{GITEE_REPO}/repository/archive/{REPO_BRANCH}.zip",
-        f"https://codeload.github.com/{REPO}/zip/refs/heads/{REPO_BRANCH}",
-    ]
+    zip_url = (f"https://github.com/{REPO}/archive/refs/heads/"
+               f"{REPO_BRANCH}.zip")
+    sources = [url] if url else (
+        [f"{m}{zip_url}" for m in GH_MIRRORS]
+        + [f"https://codeload.github.com/{REPO}/zip/refs/heads/{REPO_BRANCH}"]
+    )
     tmp = target.parent / "_repo.zip"
     target.parent.mkdir(parents=True, exist_ok=True)
     last_err: Exception | None = None
@@ -192,7 +204,8 @@ def fetch_from_zip(target: Path, url: str = "",
         with zipfile.ZipFile(tmp) as z:
             tops = {n.split("/", 1)[0] for n in z.namelist() if n.strip("/")}
             z.extractall(target.parent)
-        # zip 顶层是一个单目录，但名字随打包方式而变（Gitee/GitHub 命名规则不同），
+        # zip 顶层是一个单目录，名字随打包方式而变（GitHub 是
+        # 「仓库名-分支名」，镜像回源后一般不变），
         # 按解压出来的实际目录名剥掉这层挪到 target
         extracted = target.parent / next(iter(tops)) if len(tops) == 1 else None
         if extracted and extracted.exists():

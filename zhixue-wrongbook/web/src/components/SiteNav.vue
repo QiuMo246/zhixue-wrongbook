@@ -1,5 +1,5 @@
 <script setup>
-const GITEE = 'https://gitee.com/qiu_moRs/zhixue-wrongbook'
+// 顶栏 CTA 指向页内安装区：国内点 GitHub 会转圈，不如直接给安装入口。
 </script>
 
 <template>
@@ -12,8 +12,8 @@ const GITEE = 'https://gitee.com/qiu_moRs/zhixue-wrongbook'
         <a href="#demo">用起来什么样</a>
         <a href="#faq">常见问题</a>
       </nav>
-      <a class="btn btn-red nav-cta" :href="GITEE" target="_blank" rel="noopener">
-        Gitee 安装
+      <a class="btn btn-red nav-cta" href="#install">
+        开始安装
       </a>
     </div>
   </header>

@@ -12,7 +12,9 @@
 
 把下面这段话发给你的 AI 助手，剩下的它替你完成：
 
-> 帮我安装智学网错题助手：从 Gitee 克隆 https://gitee.com/qiu_moRs/zhixue-wrongbook 到本地，
+> 帮我安装智学网错题助手：从 GitHub 克隆 https://github.com/QiuMo246/zhixue-wrongbook 到本地。
+> 国内直连不稳，优先走镜像：git clone https://gh-proxy.org/https://github.com/QiuMo246/zhixue-wrongbook
+> （不通就换 https://gh-proxy.com/ 前缀，再不行才直连；没装 git 就跑 install.py --from-zip）。
 > 阅读 zhixue-wrongbook/README.md 并按其中的「学生最懒安装法」完成安装和配置。
 
 ## 仓库结构

@@ -1,5 +1,4 @@
 <script setup>
-const GITEE = 'https://gitee.com/qiu_moRs/zhixue-wrongbook'
 const GITHUB = 'https://github.com/QiuMo246/zhixue-wrongbook'
 </script>
 
@@ -13,13 +12,12 @@ const GITHUB = 'https://github.com/QiuMo246/zhixue-wrongbook'
         </p>
       </div>
       <div class="foot-links">
-        <a :href="GITEE" target="_blank" rel="noopener">Gitee 仓库（国内直达）</a>
         <a :href="GITHUB" target="_blank" rel="noopener">GitHub 仓库</a>
         <a :href="GITHUB + '/blob/main/README.md#已知局限诚实清单'" target="_blank" rel="noopener">已知局限（诚实清单）</a>
       </div>
     </div>
     <div class="wrap">
-      <p class="fine copy">拿不准就用 Gitee：https://gitee.com/qiu_moRs/zhixue-wrongbook</p>
+      <p class="fine copy">源码只在 GitHub。国内直连不稳？安装提示词会自动换镜像，不用你操心。</p>
     </div>
   </footer>
 </template>
