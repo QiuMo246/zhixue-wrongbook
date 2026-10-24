@@ -26,7 +26,7 @@ async function copyPrompt() {
 const manualSteps = [
   { t: '装依赖', d: 'python -m venv .venv，再用它 pip install -r requirements.txt' },
   { t: '跑验收', d: '依次运行 tools/acceptance.py、tools/edge_test.py、tools/mcp_e2e.py，全部通过就说明装对了，不需要联网' },
-  { t: '录账号', d: '运行 tools/setup_account.py，输入智学网账号密码 —— 只需要这一次' },
+  { t: '登录', d: '运行 tools/login.py，在弹出的专用浏览器里登录一次（含验证码）' },
   { t: '接 AI', d: '在 AI 助手的 MCP 配置里加上 server.py，信任自定义连接器' },
   { t: '装编排 Skill', d: '把 skill/zhixue-wrongbook/ 复制到 AI 的 skills 目录，说「帮我整理错题」它就知道怎么干' },
 ]
@@ -82,7 +82,7 @@ const manualSteps = [
         <div class="lazy-head">
           <h3 class="hf">懒人安装法（推荐）</h3>
           <p>把下面这段话<strong>原样复制给你的 AI 助手</strong>，剩下的它替你干。
-            这也是你唯一一次输入账号密码 —— 之后登录过期会自动重新登录。</p>
+            账号密码只输在弹出的<strong>专用浏览器</strong>里 —— 不进命令行、不进聊天记录。</p>
         </div>
         <div class="prompt-box">
           <div class="prompt-bar">
