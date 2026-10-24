@@ -113,6 +113,46 @@ def chrome_executable() -> Path | None:
 
 
 def _pid_alive(pid: int) -> bool:
+    """进程是否还活着。
+
+    2026-10-18 修（Windows 专属 P0）：原来用 `os.kill(pid, 0)` 判断，
+    但 CPython 在 Windows 上只认 CTRL_C_EVENT / CTRL_BREAK_EVENT，其它
+    信号值会走 TerminateProcess；`sig=0` 实测直接抛
+    `OSError: [WinError 87] 参数错误`。于是**活着的进程被一律判成已死**，
+    `daemon_status()` 每次都返回 stale_marker 并 `clear_marker()`，
+    结果 CDP 通道在 Windows 上整体不可用（浏览器明明在跑、端口也在监听）。
+
+    改用 OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION) + GetExitCodeProcess：
+    这个访问权限要求最低，跨权限级别也能查，且**不会**对目标进程做任何修改。
+    """
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        k32.OpenProcess.restype = wintypes.HANDLE
+        k32.GetExitCodeProcess.argtypes = [wintypes.HANDLE,
+                                           ctypes.POINTER(wintypes.DWORD)]
+        k32.GetExitCodeProcess.restype = wintypes.BOOL
+        k32.CloseHandle.argtypes = [wintypes.HANDLE]
+        k32.CloseHandle.restype = wintypes.BOOL
+
+        handle = k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False,
+                                 int(pid))
+        if not handle:
+            return False
+        try:
+            code = wintypes.DWORD()
+            if not k32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return False
+            return code.value == STILL_ACTIVE
+        finally:
+            k32.CloseHandle(handle)
+
     try:
         os.kill(pid, 0)
         return True
@@ -260,7 +300,18 @@ class CdpTransport:
                 missing=["python 包 websocket-client"],
                 suggested_action=[
                     f"运行 {pip_install('websocket-client')}"]) from exc
-        self._ws = websocket.create_connection(ws_url, timeout=10)
+        # 2026-10-18 修（Chrome 111+ 兼容）：新版 Chrome 会拒绝带 Origin 头的
+        # CDP WebSocket 连接，报
+        #   `Handshake status 403 Forbidden - Rejected an incoming WebSocket
+        #    connection from the http://127.0.0.1:<port> origin`
+        # 官方给的办法是启动时加 `--remote-allow-origins=*`，但那等于放宽
+        # 浏览器安全设置。客户端**不发** Origin 头效果一样，且不用改 Chrome。
+        try:
+            self._ws = websocket.create_connection(
+                ws_url, timeout=10, suppress_origin=True)
+        except TypeError:
+            # 老版本 websocket-client 不认 suppress_origin
+            self._ws = websocket.create_connection(ws_url, timeout=10)
         self._next_id = 0
 
     def request(self, method: str, params: dict | None = None,

@@ -68,7 +68,14 @@ SERVER_INSTRUCTIONS = """\
 智学网错题助手（数据面）。给宿主模型用的错题数据接口。
 
 推荐工作流：
-  1. zx_session_set  ← 用户先给一次 Cookie（或 zx_session_status 看有没有）
+  ⚠ 登录默认走浏览器（2026-10-18 起）：
+     zx_browser_start 启动专用浏览器 → 用户人工登录（含验证码）
+     → 取会话。**不要让用户跑终端命令，也不要建议 setup_account.py**
+     —— 本机账号被风控，账密登录必然报「验证码错误」，不是密码错。
+     会话约 1.5-2 小时过期，过期后重复上述流程即可。
+     zx_session_set（粘贴 Cookie）保留作备选。
+  1. zx_session_status ← 先看会话有没有、还有效没（expired 才重登，
+                        unreachable 是网络问题，别急着重登）
   2. zx_list_exams   → 让用户选要同步哪场考试
   3. zx_sync         → 错题入库
   4. get_questions   → 拿错题原始数据（题干/标准答案/解析/学生作答图片）
@@ -544,9 +551,11 @@ def zx_session_status() -> str:
         st["valid"] = False
         st["error"] = (f"会话已失效：服务端返回 errorCode={probe.get('error_code')}"
                        f"（{probe.get('error_info')}）。")
-        st["hint"] = ("存档账密自动重登失败（见 auto_relogin_error，可能密码改了）。"
-                      "更新存档：运行 tools/setup_account.py，或在 AI 助手里调 "
-                      "zx_account_set。")
+        st["hint"] = ("会话过期了。**默认走浏览器登录**：调 zx_browser_start 启动"
+                      "专用浏览器，让用户在窗口里人工登录（含验证码），"
+                      "然后再跑一次 zx_session_status 即可。"
+                      "本机不要用账密重登（风控账号必然失败）。"
+                      "备选：zx_session_set 粘贴 Cookie。")
         return _json(st)
 
     if status != "valid":
@@ -590,12 +599,16 @@ def _ensure_cookie() -> str:
         # 风控账号的失败原因不是「没录账密」，提示不能一律让它去重录
         # （2026-10-05 修，测试反馈 P0-1）。
         hint = (
-            "这个账号被风控、登录要人工过验证码：改走 zx_browser_start"
-            "（在弹出的浏览器里登录一次，之后 zx_sync_browser 采集）"
-            "或 zx_session_set（粘贴浏览器里的 Cookie）。不要让用户去改密码。"
+            "登录要人工过验证码（这台机器默认路径）：调 zx_browser_start 启动"
+            "专用浏览器，让用户在窗口里登录一次，然后取会话。"
+            "不会弹浏览器、或始终失败时才考虑 zx_session_set（粘贴 Cookie）。"
+            "不要让用户去改密码，也不要让用户跑终端命令。"
             if code == CODE_CAPTCHA_REQUIRED else
-            f"运行 {run_tool('tools/setup_account.py')} 录入一次账号密码，"
-            "之后 Cookie 失效会自动重登（风控账号除外，见 error_code）。")
+            f"登录要人工过验证码（这台机器默认路径）：调 zx_browser_start 启动"
+            f"专用浏览器，让用户在窗口里登录一次，然后取会话。"
+            f"备选是 zx_session_set（粘贴 Cookie）。"
+            f"不要让用户跑终端命令（默认入口是 {run_tool('tools/login.py')}，"
+            f"它自己就是浏览器流程；账密登录仅给未被风控的账号/其他机器）。")
         return _json({
             "ok": False, "error": str(exc) if isinstance(exc, ZxError)
             else f"{type(exc).__name__}: {exc}",
@@ -604,12 +617,12 @@ def _ensure_cookie() -> str:
         })
 
 
-@mcp.tool(description="录入智学网账号密码（本机加密存储，keyring / DPAPI / "
-                      "AES-GCM 加密文件，不落明文）。"
-                      "录入后立即登录一次并保存会话；此后 Cookie 失效会自动重登，"
-                      "用户全程只需操作这一次。**例外**：被风控、登录需人工过验证码的"
-                      "账号走不通账密登录，返回 error_code=captcha_required，"
-                      "此时改走 zx_browser_start 或 zx_session_set。")
+@mcp.tool(description="【本机不推荐】录入智学网账号密码（本机加密存储，"
+                      "keyring / DPAPI / AES-GCM 加密文件，不落明文）。"
+                      "⚠ 这台机器对应的账号被智学网风控命中，账密登录必然返回"
+                      "验证码错误（不是密码错）。**本机默认走浏览器登录**："
+                      "用 zx_browser_start + 用户人工登录，不要建议用户跑终端命令。"
+                      "本工具保留给未被风控的账号或其他机器使用。")
 @_guard
 def zx_account_set(account: str, password: str) -> str:
     try:
@@ -685,9 +698,13 @@ def zx_sync(subjects: str | list[str] = "", max_exams: int = 5,
 # 通道 C-2：CDP 守护浏览器「借页面自身的请求」采集（包一）
 # ===========================================================================
 @mcp.tool(description="启动 CDP 守护浏览器（通道 C-2）。弹出**专用** Chrome/Chromium 窗口"
-                      "让用户在里面登录智学网一次，登录态留在专用 profile 里，"
-                      "凭据不经手 MCP。启动后调 zx_sync_browser 采集。"
-                      "⚠️ 真机联调未完成（not_verified）：接口结构以真机核验为准。")
+                      "让用户在里面登录智学网一次（含验证码），登录态留在专用 profile 里，"
+                      "凭据不经手 MCP。**这是本机的默认登录方式** —— 账号被风控，"
+                      "账密登录走不通。登录完用户会说一声，再用 "
+                      "tools/login.py --no-wait 取会话。"
+                      "⚠️ 专用 profile 在 data/.browser-cdp，绝不碰用户真实 Chrome。"
+                      "⚠️ zx_sync_browser 采集通道真机联调未完成（not_verified）；"
+                      "登录 + 取会话这一段是验证过的。")
 @_guard
 def zx_browser_start() -> str:
     return _json(browser_collect.start_daemon())

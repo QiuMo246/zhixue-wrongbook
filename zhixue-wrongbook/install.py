@@ -5,7 +5,11 @@
     python install.py --config --mcp-config ~/.my-hub/mcp.json
                                    # 宿主不在已知三个目录里时，显式指定要写的文件
     python install.py --account 13x --password xxx
-                                   # 顺带完成登录（= 用户唯一一次"登录"）
+                                   # [非默认] 账密登录，仅未被风控的账号可用
+
+默认登录方式是**浏览器**：装完后跑 `python tools/login.py`，会拉起专用
+Chrome 窗口，用户在里面人工登录一次（含验证码）。本机账号被智学网风控
+命中，账密登录必然报「验证码错误」，所以不默认走账密。
 
 2026-09-25 针对学生环境（没 Python / 没 git）补的两条路：
 
@@ -358,11 +362,13 @@ def auto_config(explicit: str = "") -> dict:
 
 def setup_account(account: str, password: str) -> None:
     step("录入账号密码（真实登录一次，之后 Cookie 失效自动重登）")
+    print("  注意：这是**非默认**路径。默认登录走浏览器（tools/login.py）。")
+    print("  被智学网风控命中的账号，账密登录必然返回「验证码错误」。")
     r = subprocess.run([str(PY), str(ROOT / "tools" / "setup_account.py"),
                         "--account", account, "--password", password])
     if r.returncode != 0:
-        raise SystemExit("登录失败 —— 检查账号密码后再跑一次 "
-                         f"{PY} {ROOT / 'tools' / 'setup_account.py'}")
+        raise SystemExit("登录失败 —— 账号可能被风控。改用浏览器登录：\n"
+                         f"  {PY} {ROOT / 'tools' / 'login.py'}")
 
 
 def next_steps(config_result: dict | None = None) -> None:
@@ -386,12 +392,13 @@ def next_steps(config_result: dict | None = None) -> None:
 ==================================================================
 安装完成。接下来：
 {mcp_line}
-  2) 如果刚才没录入账号密码，跑：
-       {py} tools/setup_account.py   {venv_note}
-     （这是你唯一一次需要"登录"—— 之后失效会自动重登。
-      例外：被智学网风控、登录必须做验证码的账号，账密自动重登用不了，
-      请在助手对话里用 zx_browser_start 手动登录一次，
-      或用 zx_session_set 粘贴浏览器里的 Cookie。）
+  2) 如果刚才没建立会话，跑：
+       {py} tools/login.py   {venv_note}
+     （**默认走浏览器**：会拉起专用 Chrome 窗口，你人工登录一次即可 ——
+      账号密码只输在浏览器里，不进命令行、不进聊天记录。
+      账号被智学网风控时，账密登录必然报「验证码错误」，所以默认不走账密。
+      确实要用账密（未被风控的账号 / 其他机器）：
+       {py} tools/login.py --password ）
   3) 对 AI 助手说「帮我同步错题」即可开始使用
 ==================================================================
 """)
@@ -405,8 +412,11 @@ def main() -> int:
                     help="配合 --config：把 MCP 条目写进你指定的 mcp.json"
                          "（用于 ~/.workbuddy-ai、~/.zcode、~/.claude 之外的宿主，"
                          "如自建 MCP hub）")
-    ap.add_argument("--account", default="", help="智学网账号（手机号/准考证号）")
-    ap.add_argument("--password", default="", help="密码（不带则跳过登录步骤）")
+    ap.add_argument("--account", default="",
+                    help="[非默认] 智学网账号 —— 走账密登录，仅未被风控的账号可用；"
+                         "默认登录方式是浏览器（tools/login.py）")
+    ap.add_argument("--password", default="",
+                    help="[非默认] 密码（不带则跳过登录步骤）")
     ap.add_argument("--from-zip", nargs="?", const="default", default="",
                     help="没有 git 时的兜底：直接下载仓库 zip 解压后安装"
                          "（不带 URL 用默认仓库）")

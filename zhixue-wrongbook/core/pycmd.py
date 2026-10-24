@@ -33,5 +33,5 @@ def pip_install(*packages: str) -> str:
 
 
 def run_tool(script: str) -> str:
-    """「跑某个工具脚本」的可直接执行命令。script 形如 tools/setup_account.py。"""
+    """「跑某个工具脚本」的可直接执行命令。script 形如 tools/login.py。"""
     return f"{venv_python()} {script.replace(chr(92), '/')}"

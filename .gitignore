@@ -43,3 +43,7 @@ report_top.png
 
 # ===== 编辑器/工具 =====
 .playwright-mcp/
+
+# ===== 仓库自身的残骸（2026-10-24 重建仓库时备份的损坏 gitdir 指针）=====
+.git.broken-*
+

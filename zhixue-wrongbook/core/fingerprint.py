@@ -115,11 +115,16 @@ class FingerprintStore:
             "ON CONFLICT(endpoint) DO UPDATE SET signature = excluded.signature, "
             "sample_count = sample_count + 1, updated_at = excluded.updated_at",
             (endpoint, "\n".join(signature), now))
+        # 2026-10-18 修：原来不 commit。tools/ 里的脚本每次 `_fp_store()` 都新开
+        # 一个连接、用完不关，未提交的基线随进程退出一起丢掉 —— 于是每次运行都
+        # 被当成「首次登记」，基线永远学不会，同一轮里不同学科还会互相误判漂移。
+        self.conn.commit()
 
     def bump(self, endpoint: str, now: str) -> None:
         self.conn.execute(
             "UPDATE endpoint_fingerprint SET sample_count = sample_count + 1, "
             "updated_at = ? WHERE endpoint = ?", (now, endpoint))
+        self.conn.commit()   # 同上（2026-10-18 修）
 
     def reset(self, endpoint: str | None = None) -> int:
         """清基线（2026-09-27 新增，优化.md #24）：平台改版后由用户显式接受

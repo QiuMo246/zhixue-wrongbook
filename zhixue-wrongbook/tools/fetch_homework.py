@@ -152,14 +152,21 @@ def fetch_subjects(s, headers, year, exam_id: str,
 
 
 def fetch_topics(s, headers, exam_id: str, paper_id: str,
-                 fp: FingerprintStore | None = None) -> list[dict]:
+                 fp: FingerprintStore | None = None,
+                 subject: str = "") -> list[dict]:
     """③ 某学科在本次作业里的题目（含答案与解析）。"""
     d = s.get(BASE + TOPIC_URL,
               params={"examId": exam_id, "paperId": paper_id},
               headers=headers, timeout=25).json()
     if fp is not None:
-        check_response(fp, "homework.getLostTopicAndAnalysis", d,
-                       datetime.now(timezone.utc).isoformat())
+        # 2026-10-18 修：指纹端点必须带学科。同一个接口，语文（主观题为主，
+        # 字段路径约 40 条）和数学/物理（客观题为主）的返回结构**本来就不同**。
+        # 原来共用 "homework.getLostTopicAndAnalysis" 一个 key，于是同一轮里
+        # 先处理的学科登记了基线，后处理的学科一律被判「结构漂移」——
+        # 实测语文 50 份作业全被拦、物理也大面积误报。按学科分开记就没这问题。
+        ep = (f"homework.getLostTopicAndAnalysis:{subject}"
+              if subject else "homework.getLostTopicAndAnalysis")
+        check_response(fp, ep, d, datetime.now(timezone.utc).isoformat())
     res = d.get("result") or {}
     return ((res.get("wrongTopicAnalysis") or {}).get("topicList")) or []
 
@@ -211,7 +218,8 @@ def main() -> int:
             if args.subject and sb.get("subjectName") != args.subject:
                 continue
             try:
-                tl = fetch_topics(s, headers, eid, sb.get("topicSetId"), fp=fp)
+                tl = fetch_topics(s, headers, eid, sb.get("topicSetId"), fp=fp,
+                                  subject=sb.get("subjectName") or "")
             except Exception as exc:
                 tl = []
                 print(f"       {sb.get('subjectName')} 取题失败：{exc}")

@@ -84,8 +84,10 @@ class AutoLoginError(ZxError):
         super().__init__(
             message, code=code, missing=missing,
             suggested_action=suggested_action or [
-                f"跑 {run_tool('tools/setup_account.py')} 重新录入一次账号密码（密码改过时）",
+                f"默认走浏览器登录：{run_tool('tools/login.py')}"
+                "（拉起专用浏览器，人工过验证码，最稳）",
                 "或改用 zx_session_set 直接粘贴 Cookie（不走账密）",
+                f"仅未被风控的账号才用账密：{run_tool('tools/setup_account.py')}",
                 "或改走合规通道 A：zx_import_export_file 解析官方导出文件",
             ])
 
@@ -321,9 +323,10 @@ def ensure_session() -> tuple[str, bool]:
     if not cred:
         raise AutoLoginError(
             "会话失效，且本机没有存档的账号密码，无法自动重登。"
-            f"运行 {run_tool('tools/setup_account.py')} 录入一次即可，"
-            "之后再也不用手动登录。（风控账号过不了账密登录，"
-            "请改走 zx_browser_start 或 zx_session_set。）")
+            f"默认走浏览器登录：{run_tool('tools/login.py')}"
+            "（拉起专用浏览器，人工登录一次）。"
+            "账密登录只对未被风控的账号有效，风控账号请改走 "
+            "zx_browser_start 或 zx_session_set。")
     account, password = cred
     cookie = login_with_password(account, password)
     session_store.set_cookie(cookie)

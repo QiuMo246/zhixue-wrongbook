@@ -156,17 +156,17 @@ agent_created: true
 ### 场景 1：第一次用（2026-09-25 起全程只需登录一次）
 
 1. `zx_session_status` → 会话有效就直接用；无效/无 Cookie 走 2
-2. **录入账密（首选，二选一）**：
-   - 让用户在终端跑 `tools/setup_account.py`（密码不回显、不经过聊天记录）；
-   - 或用户愿意的话，把账号密码发给你，你调 `zx_account_set(account, password)`。
-   录入时即登录一次并存会话，**之后 Cookie 失效会自动重登，用户永远不用再登录**。
-   （旧的复制 Cookie 流程 `zx_session_set` 仍保留作备选。）
-   ⚠ **例外（2026-10-05，真实环境实测）**：被智学网风控命中的账号登录必须
-   人工过验证码，账密这条路**走不通**，`zx_account_set` 会返回
-   `error_code=captcha_required`。这时**不要让用户改密码**，改走：
-   `zx_browser_start`（用户在弹出的专用 Chrome 里手动登录一次，之后
-   `zx_sync_browser` 采集）或 `zx_session_set`（粘贴浏览器里的 Cookie）。
-   对这类账号，向用户如实说明「自动重登用不了」，别照抄上面的承诺。
+2. **登录（默认走浏览器，2026-10-24 起）**：
+   - 首选：调 `zx_browser_start` 拉起专用浏览器，让用户在里面人工登录一次
+     （含验证码），登录完跑 `tools/login.py --no-wait` 取会话。
+     用户说「登录完了」就执行这一步，**不要让用户自己敲命令**。
+   - 命令行等价物：`tools/login.py`（默认就是浏览器流程）。
+   - ⚠ **不要默认推荐 `setup_account.py` / `zx_account_set`**：这台机器的账号
+     被智学网风控命中，账密登录必然返回「验证码错误」（不是密码错，别让用户
+     改密码）。账密只对未被风控的账号 / 其他机器有效，需要时显式加
+     `tools/login.py --password`。
+   - 备选：`zx_session_set`（粘贴浏览器里的 Cookie），浏览器起不来时用。
+   - 会话有效期约 1.5–2 小时，过期需重新登录一次。
 3. `zx_list_exams` → 把考试列表给用户看，让他选
 4. `zx_sync(subjects="数学", exam_ids="...")` → 同步
 5. 报告：同步了多少题、有没有报错、有没有需要复核的
